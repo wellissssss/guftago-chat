@@ -39,6 +39,11 @@
   const gifBtn = $('#gif-btn');
   const voiceBtn = $('#voice-btn');
   const fileInput = $('#file-input');
+const previewOverlay = $('#preview-overlay');
+const previewMedia = $('#preview-media');
+const previewCaption = $('#preview-caption');
+const previewCancel = $('#preview-cancel');
+const previewSend = $('#preview-send');
   const typingIndicator = $('#typing-indicator');
   const typingText = $('#typing-text');
   const partnerStatus = $('#partner-status');
@@ -170,6 +175,11 @@
       renderMessage(msg);
       scrollToBottom();
       if (document.visibilityState === 'visible' && msg.sender !== me.user) socket.emit('read', [msg.id]);
+      // Sound + haptic notification when the tab is in the background
+      if (msg.sender !== me.user && document.visibilityState !== 'visible') {
+        notifSound.play().catch(() => {});
+        if (navigator.vibrate) navigator.vibrate(100);
+      }
     });
     socket.on('message:sent', (d) => {
       const el = document.querySelector(`[data-temp-id="${d.tempId}"]`);
@@ -555,7 +565,11 @@
   fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    await uploadFile(file);
+    if (file.type.startsWith('audio/')) {
+      await uploadFile(file);
+    } else {
+      showPreview(file);
+    }
     fileInput.value = '';
   });
 
@@ -588,22 +602,71 @@
     });
   }
 
-  async function uploadFile(file) {
+  // ── Media preview before sending ──
+  let previewFile = null;
+  let previewUrl = null;
+
+  function showPreview(file) {
+    previewFile = file;
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = URL.createObjectURL(file);
+    previewMedia.innerHTML = '';
+    if (file.type.startsWith('image/')) {
+      const img = document.createElement('img');
+      img.src = previewUrl;
+      img.alt = 'preview';
+      previewMedia.appendChild(img);
+    } else if (file.type.startsWith('video/')) {
+      const video = document.createElement('video');
+      video.src = previewUrl;
+      video.controls = true;
+      video.playsInline = true;
+      previewMedia.appendChild(video);
+    }
+    previewCaption.value = '';
+    previewOverlay.style.display = 'flex';
+    setTimeout(() => { try { previewCaption.focus(); } catch (e) {} }, 50);
+  }
+
+  function closePreview() {
+    previewOverlay.style.display = 'none';
+    if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; }
+    previewFile = null;
+    previewMedia.innerHTML = '';
+  }
+
+  if (previewCancel) previewCancel.addEventListener('click', closePreview);
+  if (previewSend) previewSend.addEventListener('click', async () => {
+    if (!previewFile) return;
+    const file = previewFile;
+    const caption = previewCaption.value.trim();
+    closePreview();
+    await uploadFile(file, caption);
+  });
+  if (previewOverlay) previewOverlay.addEventListener('click', (e) => {
+    if (e.target === previewOverlay) closePreview();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && previewOverlay && previewOverlay.style.display === 'flex') closePreview();
+  });
+
+  async function uploadFile(file, caption = '') {
     // Compress images client-side before upload
     if (file.type.startsWith('image/') && file.type !== 'image/gif') {
       file = await compressImage(file);
     }
     const formData = new FormData();
     formData.append('file', file);
+    const content = caption || '';
     try {
       const res = await fetch('/api/upload', { method: 'POST', body: formData });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Upload failed');
       const tempId = 'temp-' + Date.now();
       const replyData = replyingTo ? { replyTo: replyingTo.id, replyContent: replyingTo.content || replyingTo.type, replySender: replyingTo.sender } : {};
-      renderMessage({ id: 0, tempId, sender: me.user, type: data.type, content: '', url: data.url, createdAt: Date.now(), reactions: {}, ...replyData });
+      renderMessage({ id: 0, tempId, sender: me.user, type: data.type, content, url: data.url, createdAt: Date.now(), reactions: {}, ...replyData });
       scrollToBottom();
-      socket.emit('message', { tempId, type: data.type, content: '', filename: data.filename, mimetype: data.mimetype, size: data.size, replyTo: replyingTo?.id || null });
+      socket.emit('message', { tempId, type: data.type, content, filename: data.filename, mimetype: data.mimetype, size: data.size, replyTo: replyingTo?.id || null });
       cancelReply();
     } catch (err) { alert('Upload failed: ' + err.message); }
   }
@@ -1194,23 +1257,16 @@
     e.preventDefault();
     if (dropOverlay) { dropOverlay.remove(); dropOverlay = null; }
     const file = e.dataTransfer?.files?.[0];
-    if (file) uploadFile(file);
+    if (file) {
+      if (file.type.startsWith('audio/')) uploadFile(file);
+      else showPreview(file);
+    }
   });
 
   // ── Sound notification ──
   const notifSound = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2teleScFlPbGp3EhBzOG1N+0ZSYElvPSqXUjBzOG1N+0ZSYElvPSqXUjBzOG1N+0ZSYElvPSqXUjBzOG1N+0ZSYElvPSqXUjA=');
-  const origOnMessage = socket.on.bind(socket);
-  // Play sound on new message from other user
-  socket.on('message', (msg) => {
-    if (msg.sender !== me.user && document.visibilityState !== 'visible') {
-      notifSound.play().catch(() => {});
-      // Haptic feedback on mobile
-      if (navigator.vibrate) navigator.vibrate(100);
-    }
-  });
 
   // ── Haptic feedback on send ──
-  const origSend = sendBtn.onclick;
   sendBtn.addEventListener('click', () => {
     if (navigator.vibrate) navigator.vibrate(50);
   }, true);

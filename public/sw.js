@@ -1,5 +1,5 @@
 // Chat App — Service Worker (offline-first caching)
-const CACHE = 'chat-v4';
+const CACHE = 'chat-v5';
 const ASSETS = ['/', '/index.html', '/style.css', '/app.js', '/manifest.json'];
 
 self.addEventListener('install', (e) => {

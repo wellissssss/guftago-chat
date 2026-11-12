@@ -6,11 +6,11 @@
   <meta name="theme-color" content="#111B21">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Chat">
+  <meta name="apple-mobile-web-app-title" content="Guftago">
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
-  <title>Chat</title>
-  <link rel="stylesheet" href="/style.css?v=2">
+  <title>Guftago</title>
+  <link rel="stylesheet" href="/style.css?v=3">
 </head>
 <body>
   <!-- Login Screen -->
@@ -114,6 +114,20 @@
         <p>Recording — tap to stop</p>
       </div>
     </div>
+
+    <!-- Media preview overlay -->
+    <div id="preview-overlay" class="preview-overlay" style="display:none;">
+      <div class="preview-card">
+        <div class="preview-media" id="preview-media"></div>
+        <div class="preview-caption-row">
+          <input type="text" id="preview-caption" class="preview-caption" placeholder="Add a caption..." autocomplete="off">
+        </div>
+        <div class="preview-actions">
+          <button id="preview-cancel" class="admin-btn secondary">Cancel</button>
+          <button id="preview-send" class="admin-btn">Send</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="reaction-picker" class="reaction-picker" style="display:none;">
@@ -184,6 +198,6 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/app.js?v=2"></script>
+  <script src="/app.js?v=3"></script>
 </body>
 </html>
