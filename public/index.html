@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#111B21">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Chat">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
+  <title>Chat</title>
+  <link rel="stylesheet" href="/style.css?v=2">
+</head>
+<body>
+  <!-- Login Screen -->
+  <div id="login-screen" class="screen active">
+    <div class="login-bg">
+      <div class="floating-heart">💕</div>
+      <div class="floating-heart">✨</div>
+      <div class="floating-heart">🌙</div>
+      <div class="floating-heart">💫</div>
+    </div>
+    <div class="login-card">
+      <div class="login-logo"><img src="/cat-logo.jpg" alt="cat" style="width:80px;height:80px;border-radius:50%;object-fit:cover;"></div>
+      <h1 id="login-title">Guftago</h1>
+      <p class="login-sub" id="login-tagline">Your private space awaits ✨</p>
+      <form id="login-form" autocomplete="off" novalidate>
+        <div class="input-wrapper">
+          <span class="input-icon">🐾</span>
+          <input type="password" id="code-input" placeholder="Secret code here~" autocomplete="off" spellcheck="false" required>
+        </div>
+        <button type="submit" id="login-btn">Let's Chat! 🐱💕</button>
+      </form>
+      <p id="login-error" class="login-error"></p>
+      <p class="login-hint">Don't have a code? Ask your partner to generate one for you.</p>
+    </div>
+  </div>
+
+  <!-- Chat Screen -->
+  <div id="chat-screen" class="screen">
+    <header class="chat-header">
+      <div class="header-left">
+        <div class="header-avatar" id="header-avatar"><img src="/cat-logo.jpg" alt="cat" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"></div>
+        <div class="header-info">
+          <span class="header-title" id="chat-title">Guftago</span>
+          <span class="header-status" id="partner-status">offline</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <button class="header-btn" id="search-btn" title="Search">🔍</button>
+        <button class="header-btn" id="export-btn" title="Export chat">📥</button>
+        <button class="header-btn" id="admin-btn" title="Admin" style="display:none;">⚙️</button>
+        <button class="header-btn" id="theme-btn" title="Toggle theme">🌙</button>
+      </div>
+    </header>
+
+    <!-- Search bar -->
+    <div id="search-bar" class="search-bar" style="display:none;">
+      <input type="text" id="search-input" placeholder="Search messages..." autocomplete="off">
+      <button id="search-close" class="icon-btn" style="width:32px;height:32px;font-size:14px;">✕</button>
+    </div>
+
+    <!-- Pinned message banner -->
+    <div id="pinned-banner" class="pinned-banner" style="display:none;">
+      <span class="pinned-icon">📌</span>
+      <span class="pinned-text" id="pinned-text"></span>
+      <button class="pinned-close" id="pinned-close">✕</button>
+    </div>
+
+    <main id="messages" class="messages"></main>
+
+    <div id="typing-indicator" class="typing-indicator" style="display:none;">
+      <div class="typing-dots"><span></span><span></span><span></span></div>
+      <span id="typing-text">typing...</span>
+    </div>
+
+    <!-- Reply preview bar -->
+    <div id="reply-preview" class="reply-preview" style="display:none;">
+      <div class="reply-preview-content">
+        <span class="reply-preview-sender" id="reply-sender"></span>
+        <span class="reply-preview-text" id="reply-text"></span>
+      </div>
+      <button id="reply-cancel" class="icon-btn" style="width:28px;height:28px;font-size:14px;">✕</button>
+    </div>
+
+    <footer class="input-bar">
+      <button id="attach-btn" class="icon-btn" title="Attach">📎</button>
+      <button id="gif-btn" class="icon-btn" title="GIF">🎞</button>
+      <button id="voice-btn" class="icon-btn" title="Voice note">🎙</button>
+      <textarea id="msg-input" placeholder="Message" autocomplete="off" rows="1"></textarea>
+      <button id="send-btn" class="send-btn" title="Send">➤</button>
+    </footer>
+
+    <input type="file" id="file-input" accept="image/*,video/*,audio/*" style="display:none;">
+
+    <div id="gif-panel" class="gif-panel" style="display:none;">
+      <div class="gif-panel-header">
+        <input type="url" id="gif-url-input" placeholder="Paste GIF URL here..." autocomplete="off">
+        <button id="gif-url-send" class="send-btn" style="width:36px;height:36px;font-size:14px;">➤</button>
+        <button id="gif-close" class="icon-btn" style="width:36px;height:36px;">✕</button>
+      </div>
+      <div class="gif-panel-body">
+        <p class="gif-hint">Paste a GIF URL from Giphy, Tenor, or any source. Or upload a GIF file.</p>
+        <button id="gif-upload-btn" class="admin-btn secondary" style="margin:8px 12px;">📎 Upload GIF File</button>
+        <input type="file" id="gif-file-input" accept="image/gif" style="display:none;">
+      </div>
+    </div>
+
+    <div id="voice-overlay" class="voice-overlay" style="display:none;">
+      <div class="voice-recording">
+        <div class="voice-pulse"></div>
+        <span id="voice-timer">0:00</span>
+        <p>Recording — tap to stop</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="reaction-picker" class="reaction-picker" style="display:none;">
+    <button data-emoji="❤️">❤️</button>
+    <button data-emoji="😂">😂</button>
+    <button data-emoji="😍">😍</button>
+    <button data-emoji="😮">😮</button>
+    <button data-emoji="😢">😢</button>
+    <button data-emoji="👍">👍</button>
+    <button data-emoji="🔥">🔥</button>
+    <button data-emoji="💯">💯</button>
+  </div>
+
+  <div id="context-menu" class="context-menu" style="display:none;"></div>
+
+  <!-- Admin Panel Modal -->
+  <div id="admin-panel" class="admin-panel" style="display:none;">
+    <div class="admin-card">
+      <div class="admin-header">
+        <h2>⚙️ Admin Panel</h2>
+        <button class="icon-btn" id="admin-close">✕</button>
+      </div>
+      <div class="admin-section">
+        <h3>Profile Picture</h3>
+        <p class="admin-desc">Choose a cute cat picture for you and your partner.</p>
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <button id="pick-cat-me" class="admin-btn secondary" style="flex:1;">🐱 My Pic</button>
+          <button id="pick-cat-partner" class="admin-btn secondary" style="flex:1;">🐱 Partner's Pic</button>
+        </div>
+        <div id="cat-preview" style="text-align:center;margin-bottom:12px;"></div>
+      </div>
+      <div class="admin-section">
+        <h3>Your Name (Admin)</h3>
+        <p class="admin-desc">This is how your partner sees you in the chat.</p>
+        <input type="text" id="admin-name-input" placeholder="Your name" class="admin-input">
+        <button id="update-name-btn" class="admin-btn secondary">Update Name</button>
+      </div>
+      <div class="admin-section">
+        <h3>Generate Partner Code</h3>
+        <p class="admin-desc">Generate a new access code for your partner. Old codes will be invalidated.</p>
+        <input type="text" id="partner-name-input" placeholder="Partner's name" class="admin-input">
+        <input type="text" id="custom-code-input" placeholder="Custom code (optional, leave empty for random)" class="admin-input" spellcheck="false">
+        <button id="gen-code-btn" class="admin-btn">Generate New Code</button>
+        <div id="gen-code-result" class="gen-code-result" style="display:none;">
+          <p>Share this code with your partner:</p>
+          <div class="code-display" id="new-code-display"></div>
+          <button id="copy-code-btn" class="admin-btn secondary">Copy Code</button>
+        </div>
+      </div>
+      <div class="admin-section">
+        <h3>Settings</h3>
+        <div class="settings-row">
+          <span>Enter to send message</span>
+          <div class="settings-toggle" id="enter-send-toggle"></div>
+        </div>
+        <p class="admin-desc" style="margin-top:4px;">When OFF: Enter = new line, Ctrl+Enter = send</p>
+      </div>
+      <div class="admin-section">
+        <h3>Active Sessions</h3>
+        <p class="admin-desc">Users currently connected. Kick to instantly disconnect.</p>
+        <div id="sessions-list" class="codes-list"></div>
+      </div>
+      <div class="admin-section">
+        <h3>Active Codes</h3>
+        <div id="codes-list" class="codes-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/app.js?v=2"></script>
+</body>
+</html>
