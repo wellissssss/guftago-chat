@@ -49,6 +49,7 @@
       </div>
       <div class="header-right">
         <button class="header-btn" id="search-btn" title="Search">🔍</button>
+        <button class="header-btn" id="bookmarks-btn" title="Bookmarks">⭐</button>
         <button class="header-btn" id="export-btn" title="Export chat">📥</button>
         <button class="header-btn" id="admin-btn" title="Admin" style="display:none;">⚙️</button>
         <button class="header-btn" id="theme-btn" title="Toggle theme">🌙</button>
@@ -203,7 +204,18 @@
     </div>
   </div>
 
+  <!-- Bookmarks Panel Modal -->
+  <div id="bookmarks-panel" class="admin-panel" style="display:none;">
+    <div class="admin-card">
+      <div class="admin-header">
+        <h2>⭐ Bookmarked Messages</h2>
+        <button class="icon-btn" id="bookmarks-close">✕</button>
+      </div>
+      <div id="bookmarks-list" class="codes-list"></div>
+    </div>
+  </div>
+
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/app.js?v=4"></script>
+  <script src="/app.js?v=5"></script>
 </body>
 </html>

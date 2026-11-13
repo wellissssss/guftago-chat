@@ -93,6 +93,8 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
 `);
+// Migration: add bookmarked column if missing
+try { db.exec('ALTER TABLE messages ADD COLUMN bookmarked INTEGER NOT NULL DEFAULT 0'); } catch (e) { /* column may already exist */ }
 
 const insertMsg = db.prepare(
   'INSERT INTO messages (sender, type, content, filename, mimetype, size, reply_to, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
@@ -253,6 +255,16 @@ io.on('connection', (socket) => {
     io.emit('message:pinned', { id: messageId, pinned: !!pinned });
   });
 
+  // Bookmark/unbookmark message
+  socket.on('bookmark', (data) => {
+    const { messageId, bookmarked } = data;
+    if (!messageId) return;
+    const msg = db.prepare('SELECT * FROM messages WHERE id = ?').get(messageId);
+    if (!msg) return;
+    db.prepare('UPDATE messages SET bookmarked = ? WHERE id = ?').run(bookmarked ? 1 : 0, messageId);
+    io.emit('message:bookmarked', { id: messageId, bookmarked: !!bookmarked });
+  });
+
   // Delete message
   socket.on('delete', (data) => {
     const { messageId } = data;
@@ -324,6 +336,7 @@ function formatMessage(m) {
     replyContent,
     replySender,
     pinned: !!m.pinned,
+    bookmarked: !!m.bookmarked,
     createdAt: m.created_at,
     readAt: m.read_at,
     reactions,
@@ -524,6 +537,12 @@ app.get('/api/messages', (req, res) => {
   const limit = Math.min(parseInt(req.query.limit || '100', 10), 200);
   const offset = parseInt(req.query.offset || '0', 10);
   const rows = getMessages.all(limit, offset);
+  res.json(rows.map(formatMessage));
+});
+
+// Get bookmarked messages
+app.get('/api/bookmarks', (req, res) => {
+  const rows = db.prepare('SELECT * FROM messages WHERE bookmarked = 1 ORDER BY created_at DESC').all();
   res.json(rows.map(formatMessage));
 });
 

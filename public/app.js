@@ -58,6 +58,10 @@ const previewSend = $('#preview-send');
   const reactionPicker = $('#reaction-picker');
   const contextMenu = $('#context-menu');
   const themeBtn = $('#theme-btn');
+  const bookmarksBtn = $('#bookmarks-btn');
+  const bookmarksPanel = $('#bookmarks-panel');
+  const bookmarksClose = $('#bookmarks-close');
+  const bookmarksList = $('#bookmarks-list');
 
   // ── Admin state ──
   let isAdmin = false;
@@ -261,6 +265,22 @@ const previewSend = $('#preview-send');
       updatePinnedBanner();
     });
 
+    // Bookmarked message handler
+    socket.on('message:bookmarked', (d) => {
+      const msgEl = document.querySelector(`.message[data-id="${d.id}"]`);
+      if (msgEl) {
+        msgEl.classList.toggle('bookmarked-msg', d.bookmarked);
+      }
+      // Update contextTarget if open
+      if (contextTarget && contextTarget.id === d.id) {
+        contextTarget.bookmarked = d.bookmarked;
+      }
+      // Refresh bookmarks panel if open
+      if (bookmarksPanel && bookmarksPanel.style.display === 'flex') {
+        loadBookmarks();
+      }
+    });
+
     // Revoked event (code deactivated or session kicked)
     socket.on('revoked', (data) => {
       // Show cute popup
@@ -423,7 +443,7 @@ const previewSend = $('#preview-send');
     if (skel) skel.remove();
     const isMe = msg.sender === me.user;
     const wrapper = document.createElement('div');
-    wrapper.className = `message ${isMe ? 'me' : 'them'} ${msg.pinned ? 'pinned-msg' : ''}`;
+    wrapper.className = `message ${isMe ? 'me' : 'them'} ${msg.pinned ? 'pinned-msg' : ''} ${msg.bookmarked ? 'bookmarked-msg' : ''}`;
     wrapper.dataset.id = msg.id || 0;
     if (msg.tempId) wrapper.dataset.tempId = msg.tempId;
 
@@ -1060,6 +1080,7 @@ const previewSend = $('#preview-send');
     html += '</div>';
     html += `<button onclick="window._ctxReply()"><span class="menu-icon">↩</span> Reply</button>`;
     html += `<button onclick="window._ctxPin()"><span class="menu-icon">📌</span> ${contextTarget.pinned ? 'Unpin' : 'Pin'}</button>`;
+    html += `<button onclick="window._ctxBookmark()"><span class="menu-icon">⭐</span> ${contextTarget.bookmarked ? 'Remove Bookmark' : 'Bookmark'}</button>`;
     if (msg.type === 'text') html += `<button onclick="window._ctxCopy()"><span class="menu-icon">📋</span> Copy</button>`;
     if (msg.sender === me.user) {
       if (msg.type === 'text') html += `<button onclick="window._ctxEdit()"><span class="menu-icon">✏️</span> Edit</button>`;
@@ -1090,6 +1111,17 @@ const previewSend = $('#preview-send');
     if (contextTarget) {
       socket.emit('pin', { messageId: contextTarget.id, pinned: !contextTarget.pinned });
       contextTarget.pinned = !contextTarget.pinned;
+    }
+    contextMenu.style.display = 'none';
+  };
+
+  window._ctxBookmark = function () {
+    if (contextTarget) {
+      const newState = !contextTarget.bookmarked;
+      socket.emit('bookmark', { messageId: contextTarget.id, bookmarked: newState });
+      contextTarget.bookmarked = newState;
+      const msgEl = document.querySelector(`.message[data-id="${contextTarget.id}"]`);
+      if (msgEl) msgEl.classList.toggle('bookmarked-msg', newState);
     }
     contextMenu.style.display = 'none';
   };
@@ -1152,6 +1184,68 @@ const previewSend = $('#preview-send');
     socket.emit('delete', { messageId: contextTarget.id });
   };
 
+  // ── Bookmarks panel logic ──
+  async function loadBookmarks() {
+    if (!bookmarksList) return;
+    bookmarksList.innerHTML = '<p class="admin-desc">Loading...</p>';
+    try {
+      const res = await fetch('/api/bookmarks');
+      const rows = await res.json();
+      if (!Array.isArray(rows) || rows.length === 0) {
+        bookmarksList.innerHTML = '<p class="admin-desc">No bookmarked messages yet.</p>';
+        return;
+      }
+      bookmarksList.innerHTML = rows.map(m => {
+        const senderName = m.sender === me.user ? 'You' : (m.sender === 'admin' ? 'Admin' : otherName);
+        const preview = m.type === 'text' ? (m.content || '') : `[${m.type}]`;
+        return `
+          <div class="bookmark-item" data-id="${m.id}">
+            <div class="bookmark-meta">
+              <span><span class="bookmark-sender">${escHtml(senderName)}</span> · ${formatTime(m.createdAt)}</span>
+              <button class="bookmark-remove" data-id="${m.id}" title="Remove bookmark">✕</button>
+            </div>
+            <div class="bookmark-content">${escHtml(preview)}</div>
+          </div>
+        `;
+      }).join('');
+      // click to scroll
+      bookmarksList.querySelectorAll('.bookmark-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+          if (e.target.classList.contains('bookmark-remove')) return;
+          const id = parseInt(item.dataset.id, 10);
+          const origEl = document.querySelector(`.message[data-id="${id}"]`);
+          if (origEl) {
+            origEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            origEl.style.transition = 'background 0.3s';
+            origEl.style.background = 'rgba(245,166,35,0.25)';
+            setTimeout(() => { origEl.style.background = ''; }, 1000);
+          }
+          if (bookmarksPanel) bookmarksPanel.style.display = 'none';
+        });
+      });
+      // remove bookmark
+      bookmarksList.querySelectorAll('.bookmark-remove').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const id = parseInt(btn.dataset.id, 10);
+          socket.emit('bookmark', { messageId: id, bookmarked: false });
+          // update contextTarget if needed
+          const item = btn.closest('.bookmark-item');
+          if (item) item.remove();
+          const msgEl = document.querySelector(`.message[data-id="${id}"]`);
+          if (msgEl) msgEl.classList.remove('bookmarked-msg');
+          // refresh if empty
+          if (!bookmarksList.querySelector('.bookmark-item')) {
+            bookmarksList.innerHTML = '<p class="admin-desc">No bookmarked messages yet.</p>';
+          }
+        });
+      });
+    } catch (e) {
+      console.error(e);
+      bookmarksList.innerHTML = '<p class="admin-desc">Failed to load bookmarks.</p>';
+    }
+  }
+
   // ── Hide menus on outside click ──
   document.addEventListener('click', (e) => {
     if (!contextMenu.contains(e.target)) contextMenu.style.display = 'none';
@@ -1208,6 +1302,26 @@ const previewSend = $('#preview-send');
     loadCodes();
     loadSessions();
   });
+
+  // Bookmarks panel
+  if (bookmarksBtn) {
+    bookmarksBtn.addEventListener('click', () => {
+      if (bookmarksPanel) {
+        bookmarksPanel.style.display = 'flex';
+        loadBookmarks();
+      }
+    });
+  }
+  if (bookmarksClose) {
+    bookmarksClose.addEventListener('click', () => {
+      if (bookmarksPanel) bookmarksPanel.style.display = 'none';
+    });
+  }
+  if (bookmarksPanel) {
+    bookmarksPanel.addEventListener('click', (e) => {
+      if (e.target === bookmarksPanel) bookmarksPanel.style.display = 'none';
+    });
+  }
 
   async function loadSessions() {
     try {
