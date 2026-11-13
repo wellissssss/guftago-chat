@@ -10,7 +10,7 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
   <title>Guftago</title>
-  <link rel="stylesheet" href="/style.css?v=3">
+  <link rel="stylesheet" href="/style.css?v=4">
 </head>
 <body>
   <!-- Login Screen -->
@@ -69,6 +69,12 @@
     </div>
 
     <main id="messages" class="messages"></main>
+
+    <!-- Upload progress bar -->
+    <div id="upload-progress" class="upload-progress" style="display:none;">
+      <div class="upload-progress-bar" id="upload-progress-bar" style="width:0%"></div>
+      <span class="upload-progress-text" id="upload-progress-text">Uploading...</span>
+    </div>
 
     <div id="typing-indicator" class="typing-indicator" style="display:none;">
       <div class="typing-dots"><span></span><span></span><span></span></div>
@@ -198,6 +204,6 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/app.js?v=3"></script>
+  <script src="/app.js?v=4"></script>
 </body>
 </html>

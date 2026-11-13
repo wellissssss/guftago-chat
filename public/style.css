@@ -550,6 +550,32 @@ body { height: var(--app-height, 100%); }
 /* ── Empty state ── */
 .empty-state { text-align: center; color: var(--wa-text-secondary); padding: 40px 20px; font-size: 14px; margin: auto; }
 .empty-state .empty-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.5; }
+.empty-state .empty-title { font-size: 17px; font-weight: 600; color: var(--wa-text-primary); margin: 8px 0 4px; }
+.empty-state .empty-sub { font-size: 13px; color: var(--wa-text-secondary); line-height: 1.5; max-width: 260px; margin: 0 auto; }
+.animated-cat img { animation: catBounce 1.6s ease-in-out infinite; display: inline-block; }
+@keyframes catBounce { 0%, 100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-10px) rotate(6deg); } }
+
+/* ── Skeleton loading ── */
+.skeleton-list { display: flex; flex-direction: column; gap: 10px; padding: 16px; }
+.skeleton-bubble { height: 46px; border-radius: 12px; background: linear-gradient(90deg, var(--wa-panel-bg) 25%, var(--wa-border) 50%, var(--wa-panel-bg) 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; max-width: 62%; }
+.skeleton-bubble.me { align-self: flex-end; }
+.skeleton-bubble.them { align-self: flex-start; }
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* ── Button spinner ── */
+.btn-spinner { width: 14px; height: 14px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; display: inline-block; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 6px; }
+#login-btn.loading { opacity: 0.85; cursor: not-allowed; }
+
+/* ── Upload progress bar ── */
+.upload-progress { position: fixed; top: 0; left: 0; right: 0; height: 4px; background: var(--wa-border); z-index: 60; overflow: hidden; }
+.upload-progress-bar { height: 100%; width: 0%; background: var(--wa-primary); transition: width 0.2s ease; }
+.upload-progress-text { position: fixed; top: 8px; right: 12px; font-size: 11px; color: var(--wa-text-secondary); z-index: 61; }
+
+/* ── Error state ── */
+.error-state { text-align: center; color: var(--wa-text-secondary); padding: 40px 20px; font-size: 14px; margin: auto; }
+.error-state p { margin-bottom: 12px; color: var(--wa-text-primary); }
+.retry-btn { background: var(--wa-primary); color: #fff; border: none; padding: 8px 18px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+.retry-btn:hover { background: var(--wa-primary-hover); }
 
 /* ── Scrollbar ── */
 .messages::-webkit-scrollbar { width: 4px; }

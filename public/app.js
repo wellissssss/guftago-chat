@@ -93,11 +93,18 @@ const previewSend = $('#preview-send');
   }
 
   // ── Login ──
+  const loginBtn = $('#login-btn');
   loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const code = codeInput.value.trim();
     if (!code) return;
     loginError.textContent = '';
+    const originalBtnHtml = loginBtn ? loginBtn.innerHTML : '';
+    if (loginBtn) {
+      loginBtn.disabled = true;
+      loginBtn.classList.add('loading');
+      loginBtn.innerHTML = '<span class="btn-spinner"></span> Verifying...';
+    }
     try {
       const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
       const data = await res.json();
@@ -122,6 +129,13 @@ const previewSend = $('#preview-send');
       connectSocket(code);
       showChat();
     } catch (err) { loginError.textContent = err.message; }
+    finally {
+      if (loginBtn) {
+        loginBtn.disabled = false;
+        loginBtn.classList.remove('loading');
+        loginBtn.innerHTML = originalBtnHtml || "Let's Chat! 🐱💕";
+      }
+    }
   });
 
   // Auto-login
@@ -321,12 +335,42 @@ const previewSend = $('#preview-send');
   }
 
   // ── Load history ──
+  function showEmptyState() {
+    messagesEl.innerHTML = '<div class="empty-state"><div class="empty-icon animated-cat"><img src="/cat-logo.jpg" alt="cat" style="width:72px;height:72px;border-radius:50%;object-fit:cover;"></div><p class="empty-title">No messages yet</p><p class="empty-sub">Say meow! Your partner is waiting 💕</p></div>';
+  }
+  function showSkeletons() {
+    messagesEl.innerHTML = '';
+    const list = document.createElement('div');
+    list.className = 'skeleton-list';
+    for (let i = 0; i < 4; i++) {
+      const b = document.createElement('div');
+      b.className = 'skeleton-bubble ' + (i % 2 === 0 ? 'them' : 'me');
+      list.appendChild(b);
+    }
+    messagesEl.appendChild(list);
+  }
+  function showErrorState() {
+    messagesEl.innerHTML = '';
+    const div = document.createElement('div');
+    div.className = 'error-state';
+    const p = document.createElement('p');
+    p.textContent = "Couldn't load messages.";
+    const btn = document.createElement('button');
+    btn.className = 'retry-btn';
+    btn.textContent = 'Retry';
+    btn.addEventListener('click', loadHistory);
+    div.appendChild(p);
+    div.appendChild(btn);
+    messagesEl.appendChild(div);
+  }
   async function loadHistory() {
+    showSkeletons();
     try {
       const res = await fetch('/api/messages?limit=100');
+      if (!res.ok) throw new Error('Network error');
       const msgs = await res.json();
       messagesEl.innerHTML = '';
-      if (!msgs.length) { messagesEl.innerHTML = '<div class="empty-state"><div class="empty-icon"><img src="/cat-logo.jpg" alt="cat" style="width:64px;height:64px;border-radius:50%;object-fit:cover;opacity:0.6;"></div><p>No messages yet. Say meow!</p></div>'; return; }
+      if (!msgs.length) { showEmptyState(); return; }
       let lastDate = '';
       msgs.forEach(msg => {
         const d = formatDate(msg.createdAt);
@@ -338,7 +382,10 @@ const previewSend = $('#preview-send');
       updatePinnedBanner(msgs);
       const unread = msgs.filter(m => m.sender === otherUser && !m.readAt).map(m => m.id);
       if (unread.length && socket) socket.emit('read', unread);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      showErrorState();
+    }
   }
 
   // ── Pinned message banner ──
@@ -372,6 +419,8 @@ const previewSend = $('#preview-send');
   function renderMessage(msg, animate = true) {
     const empty = messagesEl.querySelector('.empty-state');
     if (empty) empty.remove();
+    const skel = messagesEl.querySelector('.skeleton-list');
+    if (skel) skel.remove();
     const isMe = msg.sender === me.user;
     const wrapper = document.createElement('div');
     wrapper.className = `message ${isMe ? 'me' : 'them'} ${msg.pinned ? 'pinned-msg' : ''}`;
@@ -743,6 +792,24 @@ const previewSend = $('#preview-send');
     if (e.key === 'Escape' && previewOverlay && previewOverlay.style.display === 'flex') closePreview();
   });
 
+  function showUploadProgress(pct) {
+    const bar = $('#upload-progress');
+    if (!bar) return;
+    bar.style.display = 'block';
+    updateUploadProgress(pct);
+  }
+  function updateUploadProgress(pct) {
+    const fill = $('#upload-progress-bar');
+    const text = $('#upload-progress-text');
+    if (fill) fill.style.width = (pct || 0) + '%';
+    if (text) text.textContent = `Uploading... ${pct || 0}%`;
+  }
+  function hideUploadProgress() {
+    const bar = $('#upload-progress');
+    if (bar) bar.style.display = 'none';
+    const fill = $('#upload-progress-bar');
+    if (fill) fill.style.width = '0%';
+  }
   async function uploadFile(file, caption = '') {
     // Compress images client-side before upload
     if (file.type.startsWith('image/') && file.type !== 'image/gif') {
@@ -751,10 +818,29 @@ const previewSend = $('#preview-send');
     const formData = new FormData();
     formData.append('file', file);
     const content = caption || '';
+    showUploadProgress(0);
     try {
-      const res = await fetch('/api/upload', { method: 'POST', body: formData });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      const data = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/upload');
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            updateUploadProgress(Math.round((e.loaded / e.total) * 100));
+          }
+        };
+        xhr.onload = () => {
+          let parsed = null;
+          try { parsed = JSON.parse(xhr.responseText); } catch (err) { parsed = null; }
+          if (xhr.status >= 200 && xhr.status < 300 && parsed) {
+            resolve(parsed);
+          } else {
+            reject(new Error((parsed && parsed.error) || 'Upload failed'));
+          }
+        };
+        xhr.onerror = () => reject(new Error('Network error'));
+        xhr.send(formData);
+      });
+      hideUploadProgress();
       const tempId = 'temp-' + Date.now();
       const replyData = replyingTo ? { replyTo: replyingTo.id, replyContent: replyingTo.content || replyingTo.type, replySender: replyingTo.sender } : {};
       const payload = { tempId, type: data.type, content, filename: data.filename, mimetype: data.mimetype, size: data.size, replyTo: replyingTo?.id || null };
@@ -769,7 +855,7 @@ const previewSend = $('#preview-send');
         if (el) { setMessageStatus(el, 'failed'); el.dataset.status = 'failed'; }
       }
       cancelReply();
-    } catch (err) { alert('Upload failed: ' + err.message); }
+    } catch (err) { hideUploadProgress(); alert('Upload failed: ' + err.message); }
   }
 
   // ── Voice recording (high quality) ──
