@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/usr/bin/env bash
 # Couple Chat — Expose server publicly via Cloudflare Tunnel
 # Gives you a public HTTPS URL like https://random-name.trycloudflare.com
 
