@@ -826,3 +826,32 @@ body { height: var(--app-height, 100%); }
 .messages.wallpaper-dots::before { background-image: radial-gradient(circle, var(--wa-wallpaper-pattern) 1.5px, transparent 1.5px); background-size: 18px 18px; }
 .messages.wallpaper-lines { --wa-wallpaper-bg: var(--wa-bg-chat); --wa-wallpaper-pattern: rgba(128,128,128,0.35); }
 .messages.wallpaper-lines::before { background-image: repeating-linear-gradient(0deg, var(--wa-wallpaper-pattern) 0px, var(--wa-wallpaper-pattern) 1px, transparent 1px, transparent 24px); background-size: auto; }
+
+/* Self-destruct timer */
+.sd-picker {
+  position: fixed;
+  bottom: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  background: var(--wa-bg-panel, #202c33);
+  padding: 8px;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  z-index: 100;
+}
+.sd-picker button {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: var(--wa-bg-input, #2a3942);
+  color: var(--wa-text-primary, #e9edef);
+  cursor: pointer;
+  font-size: 13px;
+}
+.sd-picker button:hover { background: var(--wa-accent, #00a884); color: #fff; }
+#sd-btn.active { color: #ff6b35; }
+.sd-icon { margin-right: 4px; }
+.sd-countdown { font-size: 11px; opacity: 0.85; color: #ff6b35; font-weight: 600; margin-left: 4px; }
+.message.self-destruct .message-bubble { border: 1px dashed rgba(255,107,53,0.4); }

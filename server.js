@@ -95,9 +95,11 @@ db.exec(`
 `);
 // Migration: add bookmarked column if missing
 try { db.exec('ALTER TABLE messages ADD COLUMN bookmarked INTEGER NOT NULL DEFAULT 0'); } catch (e) { /* column may already exist */ }
+// Migration: add self_destruct column if missing
+try { db.exec('ALTER TABLE messages ADD COLUMN self_destruct INTEGER NOT NULL DEFAULT 0'); } catch (e) { /* column may already exist */ }
 
 const insertMsg = db.prepare(
-  'INSERT INTO messages (sender, type, content, filename, mimetype, size, reply_to, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  'INSERT INTO messages (sender, type, content, filename, mimetype, size, reply_to, created_at, self_destruct) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
 );
 const getMessages = db.prepare(
   "SELECT m.*, (SELECT GROUP_CONCAT(r.emoji || ':' || r.user, ',') FROM reactions r WHERE r.message_id = m.id) as reactions FROM messages m ORDER BY m.created_at ASC LIMIT ? OFFSET ?"
@@ -184,12 +186,14 @@ io.on('connection', (socket) => {
 
   // New message
   socket.on('message', (data) => {
-    const { type, content, filename, mimetype, size, replyTo } = data;
+    const { type, content, filename, mimetype, size, replyTo, selfDestruct } = data;
     if (!type) return;
     const now = Date.now();
-    const result = insertMsg.run(userId, type, content || null, filename || null, mimetype || null, size || null, replyTo || null, now);
+    const sd = Math.max(0, parseInt(selfDestruct, 10) || 0);
+    const result = insertMsg.run(userId, type, content || null, filename || null, mimetype || null, size || null, replyTo || null, now, sd);
+    const msgId = result.lastInsertRowid;
     const msg = formatMessage({
-      id: result.lastInsertRowid,
+      id: msgId,
       sender: userId,
       type,
       content,
@@ -200,11 +204,14 @@ io.on('connection', (socket) => {
       created_at: now,
       read_at: null,
       reactions: null,
+      self_destruct: sd,
     });
     // Broadcast to the other user
     socket.broadcast.emit('message', msg);
     // Confirm to sender
     socket.emit('message:sent', { tempId: data.tempId, id: msg.id });
+    // Schedule self-destruct deletion
+    if (sd > 0) scheduleSelfDestruct(msgId, sd, now);
   });
 
   // Typing indicator
@@ -337,11 +344,46 @@ function formatMessage(m) {
     replySender,
     pinned: !!m.pinned,
     bookmarked: !!m.bookmarked,
+    selfDestruct: m.self_destruct || 0,
     createdAt: m.created_at,
     readAt: m.read_at,
     reactions,
   };
 }
+
+// ── Self-destruct scheduling ──
+function deleteMessageFiles(msg) {
+  if (msg && msg.filename) {
+    const folder = msg.type === 'photo' ? 'photos' : msg.type === 'video' ? 'videos' : msg.type === 'audio' ? 'audio' : 'gifs';
+    const filePath = path.join(uploadsDir, folder, msg.filename);
+    try { fs.unlinkSync(filePath); } catch (e) { /* ignore */ }
+  }
+}
+function scheduleSelfDestruct(msgId, seconds, createdAt) {
+  const base = createdAt || Date.now();
+  const expiry = base + (seconds || 0) * 1000;
+  const delay = expiry - Date.now();
+  const doDelete = () => {
+    const msg = db.prepare('SELECT * FROM messages WHERE id = ?').get(msgId);
+    if (!msg) return;
+    deleteMessageFiles(msg);
+    db.prepare('DELETE FROM messages WHERE id = ?').run(msgId);
+    db.prepare('DELETE FROM reactions WHERE message_id = ?').run(msgId);
+    io.emit('message:deleted', { id: msgId, auto: true });
+  };
+  if (delay <= 0) {
+    // already expired
+    doDelete();
+    return;
+  }
+  setTimeout(doDelete, delay);
+}
+
+// Schedule self-destruct for existing messages on startup
+try {
+  const sdRows = db.prepare('SELECT id, created_at, self_destruct FROM messages WHERE self_destruct > 0').all();
+  sdRows.forEach(r => scheduleSelfDestruct(r.id, r.self_destruct, r.created_at));
+} catch (e) { console.error('self-destruct schedule error:', e.message); }
 
 // ── REST API ──
 

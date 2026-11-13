@@ -24,6 +24,7 @@
   let soundOnSend = localStorage.getItem('soundOnSend') !== 'false'; // default true
   let hapticFeedback = localStorage.getItem('hapticFeedback') !== 'false'; // default true
   let replyingTo = null; // { id, sender, content, type }
+  let selfDestructSeconds = parseInt(localStorage.getItem('sdTimer') || '0', 10) || 0;
 const pendingSends = new Map(); // tempId -> payload for retry
 
   // ── DOM ──
@@ -46,6 +47,8 @@ const pendingSends = new Map(); // tempId -> payload for retry
   const gifBtn = $('#gif-btn');
   const voiceBtn = $('#voice-btn');
   const fileInput = $('#file-input');
+  const sdBtn = $('#sd-btn');
+  const sdPicker = $('#sd-picker');
 const previewOverlay = $('#preview-overlay');
 const previewMedia = $('#preview-media');
 const previewCaption = $('#preview-caption');
@@ -108,6 +111,13 @@ const previewSend = $('#preview-send');
     const d = new Date(ts); let h = d.getHours(), m = d.getMinutes();
     const ampm = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
     return `${h}:${m.toString().padStart(2, '0')} ${ampm}`;
+  }
+  function formatCountdown(sec) {
+    sec = Math.max(0, Math.floor(sec));
+    if (sec < 60) return sec + 's';
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return m + 'm ' + s.toString().padStart(2, '0') + 's';
   }
   function formatDate(ts) {
     const d = new Date(ts), today = new Date(), yest = new Date(today);
@@ -393,7 +403,11 @@ const previewSend = $('#preview-send');
     });
     socket.on('message:deleted', (d) => {
       const msgEl = document.querySelector(`.message[data-id="${d.id}"]`);
-      if (msgEl) msgEl.remove();
+      if (msgEl) {
+        msgEl.style.transition = 'opacity 0.5s';
+        msgEl.style.opacity = '0';
+        setTimeout(() => { try { msgEl.remove(); } catch (e) {} }, 500);
+      }
     });
   }
 
@@ -486,8 +500,9 @@ const previewSend = $('#preview-send');
     if (skel) skel.remove();
     const isMe = msg.sender === me.user;
     const wrapper = document.createElement('div');
-    wrapper.className = `message ${isMe ? 'me' : 'them'} ${msg.pinned ? 'pinned-msg' : ''} ${msg.bookmarked ? 'bookmarked-msg' : ''}`;
+    wrapper.className = `message ${isMe ? 'me' : 'them'} ${msg.pinned ? 'pinned-msg' : ''} ${msg.bookmarked ? 'bookmarked-msg' : ''} ${msg.selfDestruct > 0 ? 'self-destruct' : ''}`;
     wrapper.dataset.id = msg.id || 0;
+    if (msg.selfDestruct > 0) wrapper.dataset.selfDestruct = msg.selfDestruct;
     if (msg.tempId) wrapper.dataset.tempId = msg.tempId;
 
     let replyCtx = '';
@@ -523,9 +538,15 @@ const previewSend = $('#preview-send');
 
     const readTimeHtml = (isMe && msg.readAt) ? `<div class="read-time">${formatReadTime(msg.readAt)}</div>` : '';
 
+    let sdHtml = '';
+    if (msg.selfDestruct > 0) {
+      const expiry = (msg.createdAt || Date.now()) + msg.selfDestruct * 1000;
+      sdHtml = `<span class="sd-icon">🔥</span><span class="sd-countdown" data-expiry="${expiry}">${formatCountdown(Math.max(0, Math.ceil((expiry - Date.now())/1000)))}</span>`;
+    }
+
     wrapper.innerHTML = `
       <div class="message-bubble">${bubble}</div>
-      <div class="message-time">${formatTime(msg.createdAt)} ${edited}</div>
+      <div class="message-time">${formatTime(msg.createdAt)} ${edited} ${sdHtml}</div>
       ${readTimeHtml}
       <div class="message-reactions" data-msg-id="${msg.id}"></div>
     `;
@@ -759,9 +780,10 @@ const previewSend = $('#preview-send');
     if (!text) return;
     const tempId = 'temp-' + Date.now();
     const replyData = replyingTo ? { replyTo: replyingTo.id, replyContent: replyingTo.content || replyingTo.type, replySender: replyingTo.sender } : {};
-    const payload = { tempId, type: 'text', content: text, replyTo: replyingTo?.id || null };
+    const sd = selfDestructSeconds;
+    const payload = { tempId, type: 'text', content: text, replyTo: replyingTo?.id || null, selfDestruct: sd };
     pendingSends.set(tempId, payload);
-    renderMessage({ id: 0, tempId, sender: me.user, type: 'text', content: text, createdAt: Date.now(), reactions: {}, status: 'sending', ...replyData });
+    renderMessage({ id: 0, tempId, sender: me.user, type: 'text', content: text, createdAt: Date.now(), reactions: {}, status: 'sending', selfDestruct: sd, ...replyData });
     scrollToBottom();
     const wasConnected = !!(socket && socket.connected);
     if (socket) socket.emit('message', payload);
@@ -823,6 +845,56 @@ const previewSend = $('#preview-send');
   // Add swipe gesture to messages in renderMessage
   // (handled below via touch events on message bubbles)
   function stopTyping() { if (isTyping) { isTyping = false; socket.emit('typing', false); } clearTimeout(typingTimeout); }
+
+  // ── Self-destruct timer picker ──
+  function updateSdBtn() {
+    if (!sdBtn) return;
+    if (selfDestructSeconds > 0) {
+      const label = selfDestructSeconds >= 3600 ? '1h' : selfDestructSeconds >= 300 ? '5m' : selfDestructSeconds >= 60 ? '1m' : '30s';
+      sdBtn.textContent = '🔥';
+      sdBtn.title = 'Self-destruct: ' + label;
+      sdBtn.classList.add('active');
+    } else {
+      sdBtn.textContent = '⏱️';
+      sdBtn.title = 'Self-destruct timer';
+      sdBtn.classList.remove('active');
+    }
+  }
+  updateSdBtn();
+  if (sdBtn) sdBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (sdPicker) sdPicker.style.display = sdPicker.style.display === 'none' ? 'flex' : 'none';
+  });
+  if (sdPicker) {
+    sdPicker.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selfDestructSeconds = parseInt(btn.dataset.sd, 10) || 0;
+        localStorage.setItem('sdTimer', String(selfDestructSeconds));
+        updateSdBtn();
+        sdPicker.style.display = 'none';
+      });
+    });
+  }
+  document.addEventListener('click', () => { if (sdPicker) sdPicker.style.display = 'none'; });
+
+  // ── Countdown updater ──
+  setInterval(() => {
+    document.querySelectorAll('.sd-countdown').forEach(el => {
+      const expiry = parseInt(el.dataset.expiry, 10);
+      const rem = Math.max(0, Math.ceil((expiry - Date.now()) / 1000));
+      el.textContent = formatCountdown(rem);
+      if (rem <= 0) {
+        const msgEl = el.closest('.message');
+        if (msgEl) {
+          msgEl.style.transition = 'opacity 0.5s';
+          msgEl.style.opacity = '0';
+          setTimeout(() => { try { msgEl.remove(); } catch (e) {} }, 500);
+        }
+        el.remove();
+      }
+    });
+  }, 1000);
 
   // ── File upload ──
   attachBtn.addEventListener('click', () => fileInput.click());
@@ -965,9 +1037,10 @@ const previewSend = $('#preview-send');
       hideUploadProgress();
       const tempId = 'temp-' + Date.now();
       const replyData = replyingTo ? { replyTo: replyingTo.id, replyContent: replyingTo.content || replyingTo.type, replySender: replyingTo.sender } : {};
-      const payload = { tempId, type: data.type, content, filename: data.filename, mimetype: data.mimetype, size: data.size, replyTo: replyingTo?.id || null };
+      const sd = selfDestructSeconds;
+       const payload = { tempId, type: data.type, content, filename: data.filename, mimetype: data.mimetype, size: data.size, replyTo: replyingTo?.id || null, selfDestruct: sd };
       pendingSends.set(tempId, payload);
-      renderMessage({ id: 0, tempId, sender: me.user, type: data.type, content, url: data.url, createdAt: Date.now(), reactions: {}, status: 'sending', ...replyData });
+      renderMessage({ id: 0, tempId, sender: me.user, type: data.type, content, url: data.url, createdAt: Date.now(), reactions: {}, status: 'sending', selfDestruct: selfDestructSeconds, ...replyData });
       scrollToBottom();
       const wasConnected = !!(socket && socket.connected);
       if (socket) socket.emit('message', payload);
@@ -1120,9 +1193,10 @@ const previewSend = $('#preview-send');
     gifPanel.style.display = 'none';
     const tempId = 'temp-' + Date.now();
     const replyData = replyingTo ? { replyTo: replyingTo.id, replyContent: replyingTo.content || replyingTo.type, replySender: replyingTo.sender } : {};
-    const payload = { tempId, type: 'gif', content: url, replyTo: replyingTo?.id || null };
+    const sd = selfDestructSeconds;
+    const payload = { tempId, type: 'gif', content: url, replyTo: replyingTo?.id || null, selfDestruct: sd };
     pendingSends.set(tempId, payload);
-    renderMessage({ id: 0, tempId, sender: me.user, type: 'gif', content: '', url, createdAt: Date.now(), reactions: {}, status: 'sending', ...replyData });
+    renderMessage({ id: 0, tempId, sender: me.user, type: 'gif', content: '', url, createdAt: Date.now(), reactions: {}, status: 'sending', selfDestruct: sd, ...replyData });
     scrollToBottom();
     const wasConnected = !!(socket && socket.connected);
     if (socket) socket.emit('message', payload);

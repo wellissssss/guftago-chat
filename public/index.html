@@ -10,7 +10,7 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
   <title>Guftago</title>
-  <link rel="stylesheet" href="/style.css?v=9">
+  <link rel="stylesheet" href="/style.css?v=10">
 </head>
 <body>
   <!-- Login Screen -->
@@ -101,9 +101,17 @@
       <button id="attach-btn" class="icon-btn" title="Attach">📎</button>
       <button id="gif-btn" class="icon-btn" title="GIF">🎞</button>
       <button id="voice-btn" class="icon-btn" title="Voice note">🎙</button>
+      <button id="sd-btn" class="icon-btn" title="Self-destruct timer">⏱️</button>
       <textarea id="msg-input" placeholder="Message" autocomplete="off" rows="1"></textarea>
       <button id="send-btn" class="send-btn" title="Send">➤</button>
     </footer>
+    <div id="sd-picker" class="sd-picker" style="display:none;">
+      <button data-sd="0">Off</button>
+      <button data-sd="30">30s</button>
+      <button data-sd="60">1m</button>
+      <button data-sd="300">5m</button>
+      <button data-sd="3600">1h</button>
+    </div>
 
     <input type="file" id="file-input" accept="image/*,video/*,audio/*" style="display:none;">
 
@@ -253,6 +261,6 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/app.js?v=9"></script>
+  <script src="/app.js?v=10"></script>
 </body>
 </html>
