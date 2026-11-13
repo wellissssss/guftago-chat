@@ -25,7 +25,7 @@
  * Exit code 0 = expectation met, 1 = expectation failed, 2 = harness error.
  */
 
-const BASE = (process.env.BASE_URL || process.argv.includes('--url')
+const BASE = (process.argv.includes('--url')
   ? process.argv[process.argv.indexOf('--url') + 1]
   : process.env.BASE_URL) || 'http://localhost:3000';
 
@@ -105,7 +105,7 @@ function splitPayload(payload) {
 /** Cleanly close an Engine.IO session. */
 async function closeEngine(sid) {
   try { await send(sid, '41'); } catch { /* already gone */ }
-  try { await poll(sid); } catch { /* expected to fail after close */ }
+  try { await Promise.race([poll(sid), sleep(200)]); } catch { /* expected to fail after close */ }
 }
 
 // ── Admin HTTP helpers ────────────────────────────────────────────────

@@ -139,10 +139,37 @@ const previewSend = $('#preview-send');
   const reactionPicker = $('#reaction-picker');
   const contextMenu = $('#context-menu');
   const themeBtn = $('#theme-btn');
+  const logoutBtn = $('#logout-btn');
   const bookmarksBtn = $('#bookmarks-btn');
   const bookmarksPanel = $('#bookmarks-panel');
   const bookmarksClose = $('#bookmarks-close');
   const bookmarksList = $('#bookmarks-list');
+
+  // ── Logout ──
+  function handleLogout() {
+    if (socket && socket.connected) {
+      try { socket.emit('logout'); } catch (_) {}
+      try { socket.disconnect(); } catch (_) {}
+    }
+    localStorage.removeItem('code');
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('myName');
+    localStorage.removeItem('otherName');
+    localStorage.removeItem('myPic');
+    localStorage.removeItem('otherPic');
+    localStorage.removeItem(DRAFT_KEY);
+    chatScreen.classList.remove('active');
+    loginScreen.classList.add('active');
+    loginError.textContent = 'Logged out.';
+  }
+  if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
+
+  window.addEventListener('pagehide', () => {
+    if (socket && socket.connected) {
+      try { socket.emit('logout'); } catch (_) {}
+    }
+  });
 
   // ── Admin state ──
   let isAdmin = false;
@@ -178,7 +205,21 @@ const previewSend = $('#preview-send');
   applyWallpaper(wallpaper);
 
   // ── Utilities ──
-  function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  function escHtml(s) {
+    if (s === null || s === undefined) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+      .replace(/`/g, '&#96;');
+  }
+  let deviceId = localStorage.getItem('guftago:deviceId');
+  if (!deviceId) {
+    deviceId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'dev-' + Math.random().toString(36).slice(2, 10);
+    localStorage.setItem('guftago:deviceId', deviceId);
+  }
   function formatTime(ts) {
     const d = new Date(ts); let h = d.getHours(), m = d.getMinutes();
     const ampm = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
@@ -221,15 +262,28 @@ const previewSend = $('#preview-send');
       loginBtn.innerHTML = '<span class="btn-spinner"></span> Verifying...';
     }
     try {
-      const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+      const devId = localStorage.getItem('guftago:deviceId') || deviceId;
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, deviceId: devId })
+      });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Invalid code');
+      if (!res.ok) {
+        if (res.status === 409) {
+          throw new Error(data.error || 'This code is in use on another device.');
+        }
+        throw new Error(data.error || 'Invalid code');
+      }
+      if (data.token) {
+        localStorage.setItem('token', data.token);
+      }
+      isAdmin = data.isAdmin || false;
       me = { user: data.user, name: data.name, profilePic: data.profilePic };
       otherUser = data.otherUser;
       otherName = data.otherName || (isAdmin ? 'Partner' : 'Admin');
       otherPic = data.otherPic || null;
       if (data.appName) { document.title = data.appName; $('#chat-title').textContent = data.appName; }
-      isAdmin = data.isAdmin || false;
       if (isAdmin) {
         adminCode = code;
         localStorage.setItem('adminCode', code);
@@ -296,8 +350,16 @@ const previewSend = $('#preview-send');
   }
 
   // ── Socket.IO ──
-  function connectSocket(code) {
-    socket = io({ auth: { code } });
+  function connectSocket(code, takeover = false) {
+    const devId = localStorage.getItem('guftago:deviceId') || deviceId;
+    const auth = { code, deviceId: devId };
+    if (takeover) auth.takeover = true;
+    socket = io({
+      auth,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 15000,
+    });
     socket.on('connect', async () => {
       if (!e2eeKeyPair) await initE2EE();
       socket.emit('pubkey', e2eePublicKeyB64);
@@ -453,6 +515,7 @@ const previewSend = $('#preview-send');
       document.body.appendChild(popup);
       // Clear stored data
       localStorage.removeItem('code');
+      localStorage.removeItem('token');
       localStorage.removeItem('user');
       localStorage.removeItem('myName');
       localStorage.removeItem('otherName');
@@ -468,26 +531,76 @@ const previewSend = $('#preview-send');
       }, 4000);
     });
 
+    // Session replaced on another device (C12, B2) - keep code saved
+    socket.on('session:replaced', (data) => {
+      const popup = document.createElement('div');
+      popup.className = 'revoked-popup';
+      popup.innerHTML = `
+        <div class="revoked-card">
+          <div class="revoked-emoji">📱</div>
+          <h3>Session Moved</h3>
+          <p>${escHtml(data?.message || 'Your session was opened on another device.')}</p>
+          <button class="admin-btn ok-btn">OK</button>
+        </div>
+      `;
+      document.body.appendChild(popup);
+      popup.querySelector('.ok-btn').addEventListener('click', () => {
+        popup.remove();
+      });
+      chatScreen.classList.remove('active');
+      loginScreen.classList.add('active');
+      loginError.textContent = 'Session opened on another device. Click Login to switch back.';
+    });
+
     // Connection error (code already in use)
     socket.on('connect_error', (err) => {
-      if (err.message.includes('already in use')) {
+      const errCode = err?.data?.code;
+      if (errCode === 'CODE_IN_USE' || (err.message && err.message.includes('already in use'))) {
+        const existingPopup = document.querySelector('.revoked-popup');
+        if (existingPopup) existingPopup.remove();
+
         const popup = document.createElement('div');
         popup.className = 'revoked-popup';
         popup.innerHTML = `
           <div class="revoked-card">
             <div class="revoked-emoji">🔒</div>
-            <h3>Code Already In Use</h3>
-            <p>This code is being used on another device. Only one session per code is allowed.</p>
-            <button class="admin-btn" onclick="this.parentElement.parentElement.remove()">OK</button>
+            <h3>Code In Use</h3>
+            <p>This code is currently active on another device.</p>
+            <div style="display:flex;gap:10px;margin-top:15px;justify-content:center;">
+              <button class="admin-btn takeover-btn" style="background:#00a884;color:#fff;">Use here instead</button>
+              <button class="admin-btn cancel-btn" style="background:rgba(255,255,255,0.1);color:inherit;">Cancel</button>
+            </div>
           </div>
         `;
         document.body.appendChild(popup);
-        setTimeout(() => {
+        popup.querySelector('.takeover-btn').addEventListener('click', () => {
           popup.remove();
+          const savedCode = localStorage.getItem('code') || codeInput.value.trim();
+          if (socket) {
+            try { socket.disconnect(); } catch (_) {}
+          }
+          connectSocket(savedCode, true);
+        });
+        popup.querySelector('.cancel-btn').addEventListener('click', () => {
+          popup.remove();
+          if (socket) {
+            try { socket.disconnect(); } catch (_) {}
+          }
           chatScreen.classList.remove('active');
           loginScreen.classList.add('active');
-          loginError.textContent = 'Code already in use. Try a different code.';
-        }, 3000);
+          loginError.textContent = 'Session canceled.';
+        });
+        return;
+      }
+
+      if (err.message && err.message.includes('Invalid code')) {
+        loginError.textContent = 'Invalid code';
+        chatScreen.classList.remove('active');
+        loginScreen.classList.add('active');
+        if (socket) {
+          try { socket.disconnect(); } catch (_) {}
+        }
+        return;
       }
     });
 
@@ -550,7 +663,16 @@ const previewSend = $('#preview-send');
   async function loadHistory() {
     showSkeletons();
     try {
-      const res = await fetch('/api/messages?limit=100');
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/messages?limit=100', {
+        headers: { ...(token ? { 'x-session': token } : {}) }
+      });
+      if (res.status === 401) {
+        chatScreen.classList.remove('active');
+        loginScreen.classList.add('active');
+        loginError.textContent = 'Session expired. Please log in again.';
+        return;
+      }
       if (!res.ok) throw new Error('Network error');
       const msgs = await res.json();
       for (const m of msgs) {
@@ -750,9 +872,6 @@ const previewSend = $('#preview-send');
         }
       });
     }
-
-    // Reaction on double-tap
-    bubbleEl.addEventListener('dblclick', (e) => { e.stopPropagation(); showReactionPicker(msg.id, bubbleEl); });
 
     messagesEl.appendChild(wrapper);
   }
@@ -1201,6 +1320,8 @@ const previewSend = $('#preview-send');
       const data = await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', '/api/upload');
+        const token = localStorage.getItem('token');
+        if (token) xhr.setRequestHeader('x-session', token);
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) {
             updateUploadProgress(Math.round((e.loaded / e.total) * 100));
@@ -1555,7 +1676,10 @@ const previewSend = $('#preview-send');
     if (!bookmarksList) return;
     bookmarksList.innerHTML = '<p class="admin-desc">Loading...</p>';
     try {
-      const res = await fetch('/api/bookmarks');
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/bookmarks', {
+        headers: { ...(token ? { 'x-session': token } : {}) }
+      });
       const rows = await res.json();
       if (!Array.isArray(rows) || rows.length === 0) {
         bookmarksList.innerHTML = '<p class="admin-desc">No bookmarked messages yet.</p>';
@@ -1972,7 +2096,10 @@ const previewSend = $('#preview-send');
   // ── Export chat ──
   exportBtn.addEventListener('click', async () => {
     try {
-      const res = await fetch('/api/messages?limit=500');
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/messages?limit=500', {
+        headers: { ...(token ? { 'x-session': token } : {}) }
+      });
       const msgs = await res.json();
       let text = 'Guftago Chat Export\\n';
       text += 'Exported: ' + new Date().toLocaleString() + '\\n';
