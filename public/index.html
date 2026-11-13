@@ -10,7 +10,7 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
   <title>Guftago</title>
-  <link rel="stylesheet" href="/style.css?v=7">
+  <link rel="stylesheet" href="/style.css?v=8">
 </head>
 <body>
   <!-- Login Screen -->
@@ -219,6 +219,11 @@
         </div>
       </div>
       <div class="admin-section">
+        <h3>Chat Stats</h3>
+        <p class="admin-desc">Message and media statistics for this chat.</p>
+        <div id="stats-grid" class="stats-grid"></div>
+      </div>
+      <div class="admin-section">
         <h3>Active Sessions</h3>
         <p class="admin-desc">Users currently connected. Kick to instantly disconnect.</p>
         <div id="sessions-list" class="codes-list"></div>
@@ -242,6 +247,6 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/app.js?v=7"></script>
+  <script src="/app.js?v=8"></script>
 </body>
 </html>

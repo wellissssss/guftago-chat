@@ -462,6 +462,18 @@ app.get('/api/admin/sessions', requireAdmin, (req, res) => {
   res.json(sessions);
 });
 
+// Chat stats
+app.get('/api/admin/stats', requireAdmin, (req, res) => {
+  const total = db.prepare('SELECT COUNT(*) as count FROM messages').get().count;
+  const byType = db.prepare('SELECT type, COUNT(*) as count FROM messages GROUP BY type').all();
+  const reactions = db.prepare('SELECT COUNT(*) as count FROM reactions').get().count;
+  const first = db.prepare('SELECT created_at FROM messages ORDER BY created_at ASC LIMIT 1').get();
+  const last = db.prepare('SELECT created_at FROM messages ORDER BY created_at DESC LIMIT 1').get();
+  const codes = db.prepare('SELECT COUNT(*) as count FROM access_codes WHERE active = 1').get().count;
+  const storage = db.prepare('SELECT COALESCE(SUM(size), 0) as bytes FROM messages').get().bytes;
+  res.json({ total, byType, reactions, firstMessage: first?.created_at, lastMessage: last?.created_at, activeCodes: codes, storageBytes: storage });
+});
+
 // Update admin name
 app.post('/api/admin/update-name', requireAdmin, (req, res) => {
   const { name } = req.body;

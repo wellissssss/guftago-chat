@@ -1382,6 +1382,7 @@ const previewSend = $('#preview-send');
     adminNameInput.value = me.name || '';
     loadCodes();
     loadSessions();
+    loadStats();
     applyWallpaper(wallpaper);
   });
 
@@ -1439,6 +1440,44 @@ const previewSend = $('#preview-send');
         });
       });
     } catch (e) { console.error(e); }
+  }
+
+  async function loadStats() {
+    const grid = $('#stats-grid');
+    if (!grid) return;
+    try {
+      const res = await fetch('/api/admin/stats', { headers: { 'X-Admin-Code': adminCode } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      const byType = {};
+      (data.byType || []).forEach(t => { byType[t.type] = t.count; });
+      const text = byType.text || 0;
+      const photo = byType.photo || 0;
+      const video = byType.video || 0;
+      const audio = byType.audio || 0;
+      const gif = byType.gif || 0;
+      const fmtDate = (ts) => ts ? new Date(ts).toLocaleString() : '—';
+      const fmtBytes = (b) => {
+        if (!b) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        let i = 0; let v = b;
+        while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+        return `${v.toFixed(1)} ${units[i]}`;
+      };
+      grid.innerHTML = `
+        <div class="stat-card"><div class="stat-icon">💬</div><div class="stat-num">${data.total || 0}</div><div class="stat-label">Total Messages</div></div>
+        <div class="stat-card"><div class="stat-icon">📝</div><div class="stat-num">${text}</div><div class="stat-label">Text</div></div>
+        <div class="stat-card"><div class="stat-icon">📷</div><div class="stat-num">${photo}</div><div class="stat-label">Photos</div></div>
+        <div class="stat-card"><div class="stat-icon">🎥</div><div class="stat-num">${video}</div><div class="stat-label">Videos</div></div>
+        <div class="stat-card"><div class="stat-icon">🎙</div><div class="stat-num">${audio}</div><div class="stat-label">Audio Notes</div></div>
+        <div class="stat-card"><div class="stat-icon">🎞</div><div class="stat-num">${gif}</div><div class="stat-label">GIFs</div></div>
+        <div class="stat-card"><div class="stat-icon">❤️</div><div class="stat-num">${data.reactions || 0}</div><div class="stat-label">Reactions</div></div>
+        <div class="stat-card"><div class="stat-icon">🔑</div><div class="stat-num">${data.activeCodes || 0}</div><div class="stat-label">Active Codes</div></div>
+        <div class="stat-card stat-wide"><div class="stat-icon">📅</div><div class="stat-num">${fmtDate(data.firstMessage)}</div><div class="stat-label">First Message</div></div>
+        <div class="stat-card stat-wide"><div class="stat-icon">📅</div><div class="stat-num">${fmtDate(data.lastMessage)}</div><div class="stat-label">Last Message</div></div>
+        <div class="stat-card stat-wide"><div class="stat-icon">💾</div><div class="stat-num">${fmtBytes(data.storageBytes)}</div><div class="stat-label">Storage Used</div></div>
+      `;
+    } catch (e) { console.error(e); grid.innerHTML = '<p class="admin-desc">Failed to load stats</p>'; }
   }
 
   updateNameBtn.addEventListener('click', async () => {
