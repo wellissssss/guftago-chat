@@ -19,6 +19,7 @@
   let reactionTarget = null;
   let contextTarget = null;
   let theme = localStorage.getItem('theme') || 'dark';
+  let wallpaper = localStorage.getItem('wallpaper') || 'default';
   let replyingTo = null; // { id, sender, content, type }
 const pendingSends = new Map(); // tempId -> payload for retry
 
@@ -76,6 +77,25 @@ const previewSend = $('#preview-send');
     themeBtn.textContent = theme === 'light' ? '☀️' : '🌙';
     localStorage.setItem('theme', theme);
   });
+
+  // ── Wallpaper ──
+  const WALLPAPER_CLASSES = ['wallpaper-default','wallpaper-dark','wallpaper-light','wallpaper-blue','wallpaper-green','wallpaper-purple','wallpaper-dots','wallpaper-lines'];
+  function applyWallpaper(name) {
+    if (!WALLPAPER_CLASSES.includes('wallpaper-' + name)) name = 'default';
+    wallpaper = name;
+    WALLPAPER_CLASSES.forEach(c => messagesEl.classList.remove(c));
+    messagesEl.classList.add('wallpaper-' + name);
+    // update active swatch in admin if present
+    const grid = document.getElementById('wallpaper-grid');
+    if (grid) {
+      grid.querySelectorAll('.wallpaper-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.wallpaper === name);
+      });
+    }
+    localStorage.setItem('wallpaper', name);
+  }
+  // load saved on init
+  applyWallpaper(wallpaper);
 
   // ── Utilities ──
   function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
@@ -1283,6 +1303,7 @@ const previewSend = $('#preview-send');
   const catPreview = $('#cat-preview');
   const enterSendToggle = $('#enter-send-toggle');
   const sessionsList = $('#sessions-list');
+  const wallpaperGrid = $('#wallpaper-grid');
 
   // Enter-to-Send toggle
   if (enterToSend) enterSendToggle.classList.add('active');
@@ -1291,6 +1312,13 @@ const previewSend = $('#preview-send');
     enterSendToggle.classList.toggle('active', enterToSend);
     localStorage.setItem('enterToSend', enterToSend.toString());
   });
+
+  // Wallpaper picker
+  if (wallpaperGrid) {
+    wallpaperGrid.querySelectorAll('.wallpaper-btn').forEach(btn => {
+      btn.addEventListener('click', () => applyWallpaper(btn.dataset.wallpaper));
+    });
+  }
   const genCodeResult = $('#gen-code-result');
   const newCodeDisplay = $('#new-code-display');
   const copyCodeBtn = $('#copy-code-btn');
@@ -1301,6 +1329,7 @@ const previewSend = $('#preview-send');
     adminNameInput.value = me.name || '';
     loadCodes();
     loadSessions();
+    applyWallpaper(wallpaper);
   });
 
   // Bookmarks panel

@@ -10,7 +10,7 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
   <title>Guftago</title>
-  <link rel="stylesheet" href="/style.css?v=5">
+  <link rel="stylesheet" href="/style.css?v=6">
 </head>
 <body>
   <!-- Login Screen -->
@@ -193,6 +193,20 @@
         <p class="admin-desc" style="margin-top:4px;">When OFF: Enter = new line, Ctrl+Enter = send</p>
       </div>
       <div class="admin-section">
+        <h3>Chat Wallpaper</h3>
+        <p class="admin-desc">Choose a background for your chat.</p>
+        <div class="wallpaper-grid" id="wallpaper-grid">
+          <button class="wallpaper-btn" data-wallpaper="default"><span class="wallpaper-swatch wp-default"></span><span>Default</span></button>
+          <button class="wallpaper-btn" data-wallpaper="dark"><span class="wallpaper-swatch wp-dark"></span><span>Dark</span></button>
+          <button class="wallpaper-btn" data-wallpaper="light"><span class="wallpaper-swatch wp-light"></span><span>Light</span></button>
+          <button class="wallpaper-btn" data-wallpaper="blue"><span class="wallpaper-swatch wp-blue"></span><span>Blue</span></button>
+          <button class="wallpaper-btn" data-wallpaper="green"><span class="wallpaper-swatch wp-green"></span><span>Green</span></button>
+          <button class="wallpaper-btn" data-wallpaper="purple"><span class="wallpaper-swatch wp-purple"></span><span>Purple</span></button>
+          <button class="wallpaper-btn" data-wallpaper="dots"><span class="wallpaper-swatch wp-dots"></span><span>Dots</span></button>
+          <button class="wallpaper-btn" data-wallpaper="lines"><span class="wallpaper-swatch wp-lines"></span><span>Lines</span></button>
+        </div>
+      </div>
+      <div class="admin-section">
         <h3>Active Sessions</h3>
         <p class="admin-desc">Users currently connected. Kick to instantly disconnect.</p>
         <div id="sessions-list" class="codes-list"></div>
@@ -216,6 +230,6 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/app.js?v=5"></script>
+  <script src="/app.js?v=6"></script>
 </body>
 </html>
