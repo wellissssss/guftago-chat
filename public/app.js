@@ -36,6 +36,8 @@ const pendingSends = new Map(); // tempId -> payload for retry
   const messagesEl = $('#messages');
   const msgInput = $('#msg-input');
   const sendBtn = $('#send-btn');
+  const draftIndicator = $('#draft-indicator');
+  const draftClearBtn = $('#draft-clear');
   const replyPreview = $('#reply-preview');
   const replySender = $('#reply-sender');
   const replyText = $('#reply-text');
@@ -208,6 +210,7 @@ const previewSend = $('#preview-send');
       headerAvatar.innerHTML = '<img src="/cat-logo.jpg" alt="cat" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">';
     }
     loadHistory();
+    restoreDraft();
   }
 
   // ── Socket.IO ──
@@ -341,6 +344,7 @@ const previewSend = $('#preview-send');
       localStorage.removeItem('otherName');
       localStorage.removeItem('myPic');
       localStorage.removeItem('otherPic');
+      localStorage.removeItem(DRAFT_KEY);
       // Redirect to login after 4 seconds
       setTimeout(() => {
         popup.remove();
@@ -697,6 +701,58 @@ const previewSend = $('#preview-send');
     msgInput.style.height = Math.min(msgInput.scrollHeight, 120) + 'px';
   }
 
+  // ── Draft message saving ──
+  const DRAFT_KEY = 'chatDraft';
+  let draftSaveTimer = null;
+
+  function showDraftIndicator() {
+    if (draftIndicator) draftIndicator.style.display = 'flex';
+  }
+  function hideDraftIndicator() {
+    if (draftIndicator) draftIndicator.style.display = 'none';
+  }
+  function updateDraftIndicator() {
+    const d = localStorage.getItem(DRAFT_KEY);
+    if (d && d.trim()) showDraftIndicator(); else hideDraftIndicator();
+  }
+  function saveDraftNow() {
+    const val = msgInput.value;
+    if (val && val.trim()) {
+      localStorage.setItem(DRAFT_KEY, val);
+      showDraftIndicator();
+    } else {
+      localStorage.removeItem(DRAFT_KEY);
+      hideDraftIndicator();
+    }
+  }
+  function scheduleDraftSave() {
+    clearTimeout(draftSaveTimer);
+    draftSaveTimer = setTimeout(saveDraftNow, 500);
+  }
+  function restoreDraft() {
+    try {
+      const d = localStorage.getItem(DRAFT_KEY);
+      if (d) {
+        msgInput.value = d;
+        autoResize();
+        showDraftIndicator();
+      } else {
+        hideDraftIndicator();
+      }
+    } catch (e) { console.error(e); }
+  }
+  function clearDraft() {
+    clearTimeout(draftSaveTimer);
+    localStorage.removeItem(DRAFT_KEY);
+    msgInput.value = '';
+    msgInput.style.height = 'auto';
+    hideDraftIndicator();
+  }
+
+  if (draftClearBtn) {
+    draftClearBtn.addEventListener('click', clearDraft);
+  }
+
   // ── Send text ──
   function sendText() {
     const text = msgInput.value.trim();
@@ -716,6 +772,7 @@ const previewSend = $('#preview-send');
     }
     msgInput.value = '';
     msgInput.style.height = 'auto';
+    clearDraft();
     cancelReply();
     stopTyping();
     if (soundOnSend) notifSound.play().catch(() => {});
@@ -740,6 +797,7 @@ const previewSend = $('#preview-send');
     if (!isTyping) { isTyping = true; socket.emit('typing', true); }
     clearTimeout(typingTimeout);
     typingTimeout = setTimeout(stopTyping, 2000);
+    scheduleDraftSave();
   });
 
   // ── Reply functions ──

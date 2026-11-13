@@ -10,7 +10,7 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
   <title>Guftago</title>
-  <link rel="stylesheet" href="/style.css?v=8">
+  <link rel="stylesheet" href="/style.css?v=9">
 </head>
 <body>
   <!-- Login Screen -->
@@ -89,6 +89,12 @@
         <span class="reply-preview-text" id="reply-text"></span>
       </div>
       <button id="reply-cancel" class="icon-btn" style="width:28px;height:28px;font-size:14px;">✕</button>
+    </div>
+
+    <!-- Draft indicator bar -->
+    <div id="draft-indicator" class="draft-indicator" style="display:none;">
+      <span class="draft-badge">Draft</span>
+      <button id="draft-clear" class="icon-btn draft-clear-btn" title="Clear draft">✕</button>
     </div>
 
     <footer class="input-bar">
@@ -247,6 +253,6 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/app.js?v=8"></script>
+  <script src="/app.js?v=9"></script>
 </body>
 </html>

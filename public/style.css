@@ -405,6 +405,18 @@ body { height: var(--app-height, 100%); }
 .reply-preview-sender { font-size: 12.6px; font-weight: 500; color: var(--wa-primary); display: block; }
 .reply-preview-text { font-size: 13px; color: var(--wa-text-secondary); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* ── Draft indicator ── */
+.draft-indicator {
+  display: none; align-items: center; gap: 8px;
+  padding: 4px 12px; background: var(--wa-compose-bg);
+  border-top: 1px solid var(--wa-border); flex-shrink: 0;
+}
+.draft-badge {
+  font-size: 11px; font-weight: 600; color: var(--wa-primary);
+  background: var(--wa-input-bg); padding: 2px 8px; border-radius: 10px;
+}
+.draft-clear-btn { width: 24px; height: 24px; font-size: 12px; }
+
 /* ── Input bar ── */
 .input-bar {
   display: flex; align-items: center; gap: 4px;
