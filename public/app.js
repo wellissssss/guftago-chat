@@ -115,6 +115,10 @@ const previewSend = $('#preview-send');
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   }
   function formatDuration(sec) { return `${Math.floor(sec / 60)}:${Math.floor(sec % 60).toString().padStart(2, '0')}`; }
+  function formatReadTime(ts) {
+    if (Date.now() - ts < 60000) return 'Read just now';
+    return 'Read at ' + formatTime(ts);
+  }
   function scrollToBottom(smooth = true) {
     requestAnimationFrame(() => { messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: smooth ? 'smooth' : 'auto' }); });
   }
@@ -265,10 +269,22 @@ const previewSend = $('#preview-send');
     socket.on('read', (d) => {
       if (d.readBy === otherUser) d.messageIds.forEach(mid => {
         const el = document.querySelector(`.message[data-id="${mid}"]`);
-        if (el) {
+        if (el && el.classList.contains('me')) {
           el.dataset.readAt = '1';
+          const ts = d.readAt || Date.now();
+          el.dataset.readAtTs = String(ts);
           const statusEl = el.querySelector('.message-status');
           if (statusEl && el.dataset.status === 'sent') { statusEl.textContent = '✓✓'; statusEl.classList.add('read'); }
+          // Update read-time display
+          let readTimeEl = el.querySelector('.read-time');
+          if (!readTimeEl) {
+            readTimeEl = document.createElement('div');
+            readTimeEl.className = 'read-time';
+            const reactionsEl = el.querySelector('.message-reactions');
+            if (reactionsEl) el.insertBefore(readTimeEl, reactionsEl);
+            else el.appendChild(readTimeEl);
+          }
+          readTimeEl.textContent = formatReadTime(ts);
         }
       });
     });
@@ -501,15 +517,19 @@ const previewSend = $('#preview-send');
 
     const edited = msg.edited ? '<span class="edited-label">edited</span>' : '';
 
+    const readTimeHtml = (isMe && msg.readAt) ? `<div class="read-time">${formatReadTime(msg.readAt)}</div>` : '';
+
     wrapper.innerHTML = `
       <div class="message-bubble">${bubble}</div>
       <div class="message-time">${formatTime(msg.createdAt)} ${edited}</div>
+      ${readTimeHtml}
       <div class="message-reactions" data-msg-id="${msg.id}"></div>
     `;
 
     if (isMe) {
       wrapper.dataset.status = msg.status || (msg.id > 0 ? 'sent' : 'sending');
       wrapper.dataset.readAt = msg.readAt ? '1' : '';
+      wrapper.dataset.readAtTs = msg.readAt ? String(msg.readAt) : '';
       setMessageStatus(wrapper, wrapper.dataset.status);
     }
 
