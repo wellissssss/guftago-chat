@@ -1,5 +1,5 @@
 // Guftago — Service Worker (offline-first caching)
-const CACHE = 'chat-v9';
+const CACHE = 'chat-v10';
 const ASSETS = ['/', '/index.html', '/style.css', '/app.js', '/manifest.json'];
 
 self.addEventListener('install', (e) => {

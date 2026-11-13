@@ -734,8 +734,8 @@ const previewSend = $('#preview-send');
     if (skel) skel.remove();
     const isMe = msg.sender === me.user;
     const wrapper = document.createElement('div');
-    const isScheduledCls = (msg.status === 'scheduled' || (msg.scheduledAt && msg.scheduledAt > 0 && msg.status !== 'sent'));
-    wrapper.className = `message ${isMe ? 'me' : 'them'} ${msg.pinned ? 'pinned-msg' : ''} ${msg.bookmarked ? 'bookmarked-msg' : ''} ${msg.selfDestruct > 0 ? 'self-destruct' : ''} ${isScheduledCls ? 'scheduled-msg' : ''}`;
+    const isScheduled = (msg.status === 'scheduled' || (msg.scheduledAt && msg.scheduledAt > 0 && msg.status !== 'sent'));
+    wrapper.className = `message ${isMe ? 'me' : 'them'} ${msg.pinned ? 'pinned-msg' : ''} ${msg.bookmarked ? 'bookmarked-msg' : ''} ${msg.selfDestruct > 0 ? 'self-destruct' : ''} ${isScheduled ? 'scheduled-msg' : ''}`;
     wrapper.dataset.id = msg.id || 0;
     if (msg.selfDestruct > 0) wrapper.dataset.selfDestruct = msg.selfDestruct;
     if (msg.tempId) wrapper.dataset.tempId = msg.tempId;
@@ -779,7 +779,6 @@ const previewSend = $('#preview-send');
       sdHtml = `<span class="sd-icon">🔥</span><span class="sd-countdown" data-expiry="${expiry}">${formatCountdown(Math.max(0, Math.ceil((expiry - Date.now())/1000)))}</span>`;
     }
 
-    const isScheduled = msg.status === 'scheduled' || (msg.scheduledAt && msg.scheduledAt > 0 && msg.status !== 'sent');
     let scheduledHtml = '';
     if (isScheduled && msg.scheduledAt) {
       scheduledHtml = `<div class="scheduled-info">⏰ Scheduled for ${new Date(msg.scheduledAt).toLocaleString()}</div>`;
@@ -818,7 +817,6 @@ const previewSend = $('#preview-send');
     // Click bubble for context menu (long-press on mobile)
     const bubbleEl = wrapper.querySelector('.message-bubble');
     let pressTimer = null;
-    bubbleEl.addEventListener('mousedown', (e) => { if (e.button === 2) { e.preventDefault(); showContextMenu(msg, bubbleEl); } });
     bubbleEl.addEventListener('contextmenu', (e) => { e.preventDefault(); showContextMenu(msg, bubbleEl); });
 
     // Swipe to reply
@@ -989,10 +987,6 @@ const previewSend = $('#preview-send');
   }
   function hideDraftIndicator() {
     if (draftIndicator) draftIndicator.style.display = 'none';
-  }
-  function updateDraftIndicator() {
-    const d = localStorage.getItem(DRAFT_KEY);
-    if (d && d.trim()) showDraftIndicator(); else hideDraftIndicator();
   }
   function saveDraftNow() {
     const val = msgInput.value;
@@ -1976,10 +1970,6 @@ const previewSend = $('#preview-send');
       if (target === 'admin') {
         me.profilePic = url;
         localStorage.setItem('myPic', url);
-        const headerAvatar = $('#header-avatar');
-        if (headerAvatar && otherPic) {
-          headerAvatar.innerHTML = `<img src="${escHtml(otherPic)}" alt="avatar">`;
-        }
         alert('Your profile picture updated!');
       } else {
         otherPic = url;

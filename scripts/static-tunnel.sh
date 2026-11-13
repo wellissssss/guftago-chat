@@ -18,4 +18,9 @@ echo "Subdomain: $SUBDOMAIN"
 echo "Static URL: https://${SUBDOMAIN}.loca.lt"
 echo ""
 
-npx --yes localtunnel --port "$PORT" --subdomain "$SUBDOMAIN"
+while true; do
+  echo "Connecting tunnel to https://${SUBDOMAIN}.loca.lt ..."
+  npx --yes localtunnel --port "$PORT" --subdomain "$SUBDOMAIN"
+  echo "Tunnel disconnected. Reconnecting in 3 seconds..."
+  sleep 3
+done

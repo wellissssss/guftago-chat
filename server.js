@@ -3,6 +3,7 @@
 
 require('dotenv').config();
 const express = require('express');
+const compression = require('compression');
 const http = require('http');
 const { Server } = require('socket.io');
 const { DatabaseSync } = require('node:sqlite');
@@ -102,6 +103,9 @@ db.exec(`
     FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
   );
   CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
+  CREATE INDEX IF NOT EXISTS idx_messages_reply_to ON messages(reply_to);
+  CREATE INDEX IF NOT EXISTS idx_reactions_message ON reactions(message_id);
+  CREATE INDEX IF NOT EXISTS idx_messages_scheduled ON messages(status, scheduled_at) WHERE status = 'scheduled';
 `);
 // Migration: add bookmarked column if missing
 try { db.exec('ALTER TABLE messages ADD COLUMN bookmarked INTEGER NOT NULL DEFAULT 0'); } catch (e) { /* column may already exist */ }
@@ -189,10 +193,27 @@ function resetLoginAttempts(ip) {
   loginAttempts.delete(ip);
 }
 
+// Clean up expired login attempts every 5 minutes to prevent memory growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, record] of loginAttempts.entries()) {
+    if (now > record.resetAt) loginAttempts.delete(ip);
+  }
+}, 300000).unref();
+
 // ── Express setup ──
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: false } });
+
+// High-performance gzip/brotli compression for text, json, js, and css
+app.use(compression({
+  threshold: 1024,
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  }
+}));
 
 // Global security headers
 app.use((req, res, next) => {
@@ -204,20 +225,24 @@ app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, filePath) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    if (filePath.endsWith('.html') || filePath.endsWith('.css') || filePath.endsWith('.js')) {
-      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-      res.setHeader('Pragma', 'no-cache');
-      res.setHeader('Expires', '0');
+    if (filePath.endsWith('.html')) {
+      // Must revalidate with server, but enables ETag / 304 Not Modified
+      res.setHeader('Cache-Control', 'no-cache');
+    } else if (filePath.endsWith('.css') || filePath.endsWith('.js')) {
+      // Versioned query params (?v=13) allow safe 1-day client caching
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+    } else if (/\.(jpg|jpeg|png|gif|webp|svg|ico)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
     }
   },
 }));
 
-app.use('/uploads', (req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  next();
-}, express.static(uploadsDir, {
-  setHeaders: (res, filePath) => {
+app.use('/uploads', express.static(uploadsDir, {
+  maxAge: '7d',
+  immutable: true,
+  setHeaders: (res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
   }
 }));
 
@@ -523,12 +548,6 @@ io.on('connection', (socket) => {
     onlineSockets.delete(socket.id);
     if (![...onlineSockets.values()].includes(userId)) {
       io.emit('presence', { userId, online: false });
-    }
-  });
-
-  socket.conn.on('close', () => {
-    if (activeSessions.get(code)?.socket === socket) {
-      activeSessions.delete(code);
     }
   });
 });
