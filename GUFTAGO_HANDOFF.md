@@ -229,8 +229,8 @@ Assume neither reported success. Re-verify both against the actual code.
 ## 9. Backlog — priority order
 
 ### Phase 1 — finish what was started (do these first)
-1. **Verify + commit the image-preview feature** (or revert it)
-2. **Mobile keyboard handling** via `visualViewport` — chat input should stay above the keyboard
+1. ~~**Verify + commit the image-preview feature**~~ — **DONE** in `c105a1e`. E2E harness `preview-test.js` (Playwright, 17 checks) passes 17/17: photo preview, `<img>` actually loads, cancel sends nothing, send adds bubble + caption, video preview, Escape closes, zero console/page errors. Three defects fixed in the same commit: page title / iOS app title were "Chat" (now Guftago), a page-load `TypeError: Cannot read properties of null (reading 'on')` from a notification listener registered on a null socket (moved into `connectSocket`'s message handler — background sound + haptic alerts work again), and asset/`sw.js` cache versions bumped (`chat-v5`, `?v=3`).
+2. **Mobile keyboard handling** via `visualViewport` — chat input should stay above the keyboard ← **NEXT**
 3. Message retry on failure
 4. Better empty states and loading indicators
 5. Sweep for remaining UI visual issues
@@ -279,7 +279,7 @@ These came from real friction last season. Ignoring them will get you the same a
 1. **Tenor is dead.** Google shut down the Tenor API on **June 30, 2026**. GIF search was removed. Current behaviour: users paste a GIF URL or upload a GIF file. Do not try to re-add Tenor.
 2. **Klipy was rejected.** Their API requires a website URL and justification the project can't provide. Don't build on it.
 3. **Audio recording needs HTTPS.** `getUserMedia` fails silently-ish on plain HTTP. Test on the tunnel URL.
-4. **Service worker caching hides changes.** Bump `CACHE = 'chat-v4'` → `chat-v5` when you touch `public/`.
+4. **Service worker caching hides changes.** Bump `CACHE` in `public/sw.js` (currently `chat-v5`) and the `?v=` query strings in `public/index.html` whenever you touch `public/`.
 5. **Tunnel URL rotates** on every restart unless a named tunnel is configured.
 6. **`node:sqlite` requires Node ≥ 22.5.** It's built in; don't swap in `better-sqlite3` unless there's a real reason.
 7. **Auto-cleanup deletes media** older than the configured days. Test with cleanup disabled if you're debugging old messages.
@@ -336,8 +336,8 @@ Interpretation: the user went to bed expecting the agent to keep improving the p
 | Messages | 678 (83 user) |
 | Tokens used | ~650k of 1,048,576 |
 | Cause of death | auto-compaction failed, `FreeUsageLimitError` 429 |
-| Git commit at handoff | `3de2076` |
-| Uncommitted files | `public/app.js`, `public/index.html`, `public/style.css` |
+| Git commit at handoff | `c105a1e` |
+| Uncommitted files | none — tree clean after the preview-feature commit |
 
 ---
 

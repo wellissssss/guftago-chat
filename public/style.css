@@ -110,6 +110,10 @@ html, body {
   font-size: 14.2px;
 }
 
+/* Size the app to the visual viewport so the composer stays above the
+   on-screen keyboard on mobile. app.js keeps --app-height in sync. */
+body { height: var(--app-height, 100%); }
+
 .screen { display: none; height: 100%; }
 .screen.active { display: flex; flex-direction: column; }
 

@@ -1271,6 +1271,27 @@ const previewSend = $('#preview-send');
     if (navigator.vibrate) navigator.vibrate(50);
   }, true);
 
+  // ── Mobile keyboard: keep the composer above the on-screen keyboard ──
+  (function initViewportSizing() {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const root = document.documentElement;
+    const syncHeight = () => {
+      root.style.setProperty('--app-height', vv.height + 'px');
+    };
+    vv.addEventListener('resize', syncHeight);
+    // iOS Safari can scroll the layout viewport when an input is focused;
+    // pin it back so the header never drifts off-screen.
+    vv.addEventListener('scroll', () => {
+      if (window.scrollY !== 0) window.scrollTo(0, 0);
+    });
+    syncHeight();
+    // When the keyboard opens, reveal the newest message above the composer.
+    msgInput.addEventListener('focus', () => {
+      setTimeout(() => scrollToBottom(false), 300);
+    });
+  })();
+
   // ── Service Worker ──
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
