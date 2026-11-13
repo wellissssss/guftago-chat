@@ -174,11 +174,18 @@ io.use((socket, next) => {
 
 // ── Socket.IO connection handling ──
 const onlineUsers = new Set();
+const userPubkeys = new Map(); // userId -> base64 ECDH public key (E2EE)
 
 io.on('connection', (socket) => {
   const { id: userId, name } = socket.partner;
   onlineUsers.add(userId);
   io.emit('presence', { userId, online: true, name });
+
+  // Relay cached peer public key for E2EE key exchange
+  const peerId = userId === 'admin' ? 'partner' : 'admin';
+  if (userPubkeys.has(peerId)) {
+    socket.emit('pubkey', { userId: peerId, pubkey: userPubkeys.get(peerId) });
+  }
 
   // Send any messages the client missed (for reconnect)
   socket.on('sync', (lastId) => {
@@ -186,6 +193,13 @@ io.on('connection', (socket) => {
       const missed = getMessagesSince.all(lastId);
       missed.forEach(m => socket.emit('message', formatMessage(m)));
     }
+  });
+
+  // E2EE public key exchange (server only relays, never reads keys/content)
+  socket.on('pubkey', (pubkey) => {
+    if (!pubkey || typeof pubkey !== 'string') return;
+    userPubkeys.set(userId, pubkey);
+    socket.broadcast.emit('pubkey', { userId, pubkey });
   });
 
   // New message

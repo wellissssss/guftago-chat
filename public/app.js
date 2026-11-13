@@ -27,6 +27,73 @@
   let selfDestructSeconds = parseInt(localStorage.getItem('sdTimer') || '0', 10) || 0;
 const pendingSends = new Map(); // tempId -> payload for retry
 
+  // ── E2EE state ──
+  let e2eeKeyPair = null;
+  let e2eePublicKeyB64 = null;
+  let e2eeKey = null; // AES-GCM CryptoKey
+
+  function b64FromBuf(buf) { return btoa(String.fromCharCode(...new Uint8Array(buf))); }
+  function bufFromB64(b64) { return Uint8Array.from(atob(b64), c => c.charCodeAt(0)); }
+
+  async function initE2EE() {
+    if (e2eeKeyPair) return;
+    e2eeKeyPair = await crypto.subtle.generateKey({name:'ECDH', namedCurve:'P-256'}, true, ['deriveKey','deriveBits']);
+    const spki = await crypto.subtle.exportKey('spki', e2eeKeyPair.publicKey);
+    e2eePublicKeyB64 = b64FromBuf(spki);
+    const cached = localStorage.getItem('e2eeSharedKey');
+    if (cached) {
+      try {
+        e2eeKey = await crypto.subtle.importKey('raw', bufFromB64(cached), {name:'AES-GCM', length:256}, false, ['encrypt','decrypt']);
+      } catch(e) { localStorage.removeItem('e2eeSharedKey'); }
+    }
+    updateEncIndicator();
+  }
+
+  async function deriveSharedKey(peerPubB64) {
+    const peerPub = await crypto.subtle.importKey('spki', bufFromB64(peerPubB64), {name:'ECDH', namedCurve:'P-256'}, true, []);
+    const bits = await crypto.subtle.deriveBits({name:'ECDH', public: peerPub}, e2eeKeyPair.privateKey, 256);
+    const hkdf = await crypto.subtle.importKey('raw', bits, 'HKDF', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey(
+      {name:'HKDF', hash:'SHA-256', salt: new Uint8Array(32), info: new TextEncoder().encode('guftago-e2ee')},
+      hkdf,
+      {name:'AES-GCM', length:256},
+      true,
+      ['encrypt','decrypt']
+    );
+    const raw = await crypto.subtle.exportKey('raw', key);
+    localStorage.setItem('e2eeSharedKey', b64FromBuf(raw));
+    e2eeKey = key;
+    updateEncIndicator();
+  }
+
+  async function encryptText(plaintext) {
+    if (!e2eeKey) return plaintext;
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = await crypto.subtle.encrypt({name:'AES-GCM', iv}, e2eeKey, new TextEncoder().encode(plaintext));
+    const combined = new Uint8Array(12 + ct.byteLength);
+    combined.set(iv); combined.set(new Uint8Array(ct), 12);
+    return b64FromBuf(combined);
+  }
+
+  async function decryptText(b64) {
+    if (!e2eeKey) return b64;
+    try {
+      const combined = bufFromB64(b64);
+      if (combined.length <= 12) return b64;
+      const iv = combined.slice(0,12);
+      const ct = combined.slice(12);
+      const pt = await crypto.subtle.decrypt({name:'AES-GCM', iv}, e2eeKey, ct);
+      return new TextDecoder().decode(pt);
+    } catch(e) {
+      return b64;
+    }
+  }
+
+  function updateEncIndicator() {
+    const badge = document.getElementById('enc-badge');
+    if (badge) badge.style.display = e2eeKey ? 'inline-flex' : 'none';
+  }
+
   // ── DOM ──
   const $ = (sel) => document.querySelector(sel);
   const loginScreen = $('#login-screen');
@@ -231,7 +298,9 @@ const previewSend = $('#preview-send');
   // ── Socket.IO ──
   function connectSocket(code) {
     socket = io({ auth: { code } });
-    socket.on('connect', () => {
+    socket.on('connect', async () => {
+      if (!e2eeKeyPair) await initE2EE();
+      socket.emit('pubkey', e2eePublicKeyB64);
       if (lastMessageId > 0) socket.emit('sync', lastMessageId);
       // Auto-retry failed messages when connection is restored
       document.querySelectorAll('.message.me[data-status="failed"]').forEach(el => {
@@ -247,10 +316,16 @@ const previewSend = $('#preview-send');
         }
       });
     });
-    socket.on('message', (msg) => {
+    socket.on('message', async (msg) => {
       // Skip if already rendered (prevents duplicates on sync/reconnect)
       if (msg.id > 0 && document.querySelector(`.message[data-id="${msg.id}"]`)) return;
       if (msg.id > lastMessageId) lastMessageId = msg.id;
+      if (msg.type === 'text' && msg.content) {
+        msg.content = await decryptText(msg.content);
+      }
+      if (msg.replyContent && typeof msg.replyContent === 'string' && !msg.replyContent.startsWith('[')) {
+        msg.replyContent = await decryptText(msg.replyContent);
+      }
       renderMessage(msg);
       scrollToBottom();
       if (document.visibilityState === 'visible' && msg.sender !== me.user) socket.emit('read', [msg.id]);
@@ -292,6 +367,20 @@ const previewSend = $('#preview-send');
         partnerStatus.textContent = d.online ? 'online' : 'offline';
         partnerStatus.classList.toggle('online', d.online);
       }
+    });
+
+    // E2EE public key exchange
+    socket.on('pubkey', async (d) => {
+      let pubkeyStr = null, fromUser = null;
+      if (typeof d === 'string') { pubkeyStr = d; fromUser = otherUser; }
+      else if (d && typeof d === 'object') { pubkeyStr = d.pubkey; fromUser = d.userId; }
+      if (!pubkeyStr || fromUser === me.user) return;
+      try {
+        if (!e2eeKeyPair) await initE2EE();
+        await deriveSharedKey(pubkeyStr);
+        // reload history to decrypt with new key
+        loadHistory();
+      } catch (e) { console.error('E2EE derive error', e); }
     });
     socket.on('reaction', (d) => updateReaction(d.messageId, d.userId, d.emoji, d.action));
     socket.on('read', (d) => {
@@ -403,11 +492,14 @@ const previewSend = $('#preview-send');
     });
 
     // Edit/delete handlers
-    socket.on('message:edited', (d) => {
+    socket.on('message:edited', async (d) => {
       const msgEl = document.querySelector(`.message[data-id="${d.id}"]`);
       if (!msgEl) return;
       const span = msgEl.querySelector('.msg-text');
-      if (span) span.textContent = d.content;
+      const content = await decryptText(d.content);
+      if (span) span.textContent = content;
+      // update contextTarget if open
+      if (contextTarget && contextTarget.id === d.id) contextTarget.content = content;
       const timeEl = msgEl.querySelector('.message-time');
       if (timeEl && !timeEl.querySelector('.edited-label')) {
         const label = document.createElement('span');
@@ -461,6 +553,10 @@ const previewSend = $('#preview-send');
       const res = await fetch('/api/messages?limit=100');
       if (!res.ok) throw new Error('Network error');
       const msgs = await res.json();
+      for (const m of msgs) {
+        if (m.type === 'text' && m.content) m.content = await decryptText(m.content);
+        if (m.replyContent && typeof m.replyContent === 'string' && !m.replyContent.startsWith('[')) m.replyContent = await decryptText(m.replyContent);
+      }
       messagesEl.innerHTML = '';
       if (!msgs.length) { showEmptyState(); return; }
       let lastDate = '';
@@ -532,7 +628,7 @@ const previewSend = $('#preview-send');
 
     let bubble = '';
     if (msg.type === 'text') {
-      bubble = replyCtx + `<span class="msg-text">${escHtml(msg.content || '')}</span>`;
+      bubble = replyCtx + `<span class="enc-lock" title="Encrypted">🔒</span><span class="msg-text">${escHtml(msg.content || '')}</span>`;
     } else if (msg.type === 'photo') {
       bubble = replyCtx + `<div class="message-media"><img src="${escHtml(msg.url)}" alt="photo" loading="lazy"></div>`;
       if (msg.content) bubble += `<div class="msg-caption">${escHtml(msg.content)}</div>`;
@@ -810,13 +906,14 @@ const previewSend = $('#preview-send');
   }
 
   // ── Send text ──
-  function sendText() {
+  async function sendText() {
     const text = msgInput.value.trim();
     if (!text) return;
     const tempId = 'temp-' + Date.now();
     const replyData = replyingTo ? { replyTo: replyingTo.id, replyContent: replyingTo.content || replyingTo.type, replySender: replyingTo.sender } : {};
     const sd = selfDestructSeconds;
-    const payload = { tempId, type: 'text', content: text, replyTo: replyingTo?.id || null, selfDestruct: sd };
+    const ciphertext = await encryptText(text);
+    const payload = { tempId, type: 'text', content: ciphertext, replyTo: replyingTo?.id || null, selfDestruct: sd };
     pendingSends.set(tempId, payload);
     renderMessage({ id: 0, tempId, sender: me.user, type: 'text', content: text, createdAt: Date.now(), reactions: {}, status: 'sending', selfDestruct: sd, ...replyData });
     scrollToBottom();
@@ -936,7 +1033,7 @@ const previewSend = $('#preview-send');
     });
   }
   if (scheduleConfirm) {
-    scheduleConfirm.addEventListener('click', (e) => {
+    scheduleConfirm.addEventListener('click', async (e) => {
       e.stopPropagation();
       const text = msgInput.value.trim();
       if (!text) { alert('Type a message first'); return; }
@@ -946,9 +1043,10 @@ const previewSend = $('#preview-send');
       const tempId = 'temp-' + Date.now();
       const replyData = replyingTo ? { replyTo: replyingTo.id, replyContent: replyingTo.content || replyingTo.type, replySender: replyingTo.sender } : {};
       const sd = selfDestructSeconds;
+      const ciphertext = await encryptText(text);
       renderMessage({ id: 0, tempId, sender: me.user, type: 'text', content: text, createdAt: Date.now(), reactions: {}, status: 'scheduled', scheduledAt, selfDestruct: sd, ...replyData });
       scrollToBottom();
-      if (socket) socket.emit('schedule', { tempId, type: 'text', content: text, scheduledAt, replyTo: replyingTo?.id || null, selfDestruct: sd });
+      if (socket) socket.emit('schedule', { tempId, type: 'text', content: ciphertext, scheduledAt, replyTo: replyingTo?.id || null, selfDestruct: sd });
       msgInput.value = '';
       msgInput.style.height = 'auto';
       clearDraft();
@@ -1414,7 +1512,7 @@ const previewSend = $('#preview-send');
     input.value = contextTarget.content;
     span.replaceWith(input);
     input.focus();
-    const save = () => {
+    const save = async () => {
       const newText = input.value.trim();
       if (newText && newText !== contextTarget.content) {
         // Update locally
@@ -1431,8 +1529,9 @@ const previewSend = $('#preview-send');
           label.textContent = 'edited';
           timeEl.appendChild(label);
         }
-        // Notify server (emit edit event)
-        socket.emit('edit', { messageId: contextTarget.id, content: newText });
+        // Notify server (emit edit event) with encrypted content
+        const ciphertext = await encryptText(newText);
+        socket.emit('edit', { messageId: contextTarget.id, content: ciphertext });
       } else {
         const newSpan = document.createElement('span');
         newSpan.className = 'msg-text';

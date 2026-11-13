@@ -892,3 +892,19 @@ body { height: var(--app-height, 100%); }
   cursor: pointer;
   font-size: 11px;
 }
+
+/* ── E2EE indicator ── */
+.enc-badge {
+  font-size: 11px;
+  color: var(--wa-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+.enc-lock {
+  font-size: 11px;
+  margin-right: 4px;
+  opacity: 0.7;
+  vertical-align: middle;
+}
