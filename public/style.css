@@ -307,6 +307,12 @@ body { height: var(--app-height, 100%); }
 }
 .message-status { font-size: 14px; line-height: 1; }
 .message-status.read { color: var(--wa-read); }
+.message-status.sending { font-size: 11px; color: var(--wa-text-secondary); display: inline-flex; align-items: center; gap: 4px; }
+.sending-spinner { width: 10px; height: 10px; border: 2px solid var(--wa-text-secondary); border-top-color: transparent; border-radius: 50%; display: inline-block; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.message-status.failed { font-size: 11px; color: var(--wa-danger); }
+.retry-btn { background: none; border: none; cursor: pointer; font-size: 14px; color: var(--wa-primary); padding: 0 2px; line-height: 1; transition: transform 0.2s; }
+.retry-btn:hover { transform: rotate(90deg); }
 
 /* ── Reactions ── */
 .message-reactions {

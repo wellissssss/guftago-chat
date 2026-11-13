@@ -20,6 +20,7 @@
   let contextTarget = null;
   let theme = localStorage.getItem('theme') || 'dark';
   let replyingTo = null; // { id, sender, content, type }
+const pendingSends = new Map(); // tempId -> payload for retry
 
   // ── DOM ──
   const $ = (sel) => document.querySelector(sel);
@@ -167,7 +168,22 @@ const previewSend = $('#preview-send');
   // ── Socket.IO ──
   function connectSocket(code) {
     socket = io({ auth: { code } });
-    socket.on('connect', () => { if (lastMessageId > 0) socket.emit('sync', lastMessageId); });
+    socket.on('connect', () => {
+      if (lastMessageId > 0) socket.emit('sync', lastMessageId);
+      // Auto-retry failed messages when connection is restored
+      document.querySelectorAll('.message.me[data-status="failed"]').forEach(el => {
+        const tempId = el.dataset.tempId;
+        const payload = pendingSends.get(tempId);
+        if (!payload) return;
+        setMessageStatus(el, 'sending');
+        el.dataset.status = 'sending';
+        if (!payload.queued) {
+          const wasConnected = !!(socket && socket.connected);
+          if (socket) socket.emit('message', payload);
+          payload.queued = !wasConnected;
+        }
+      });
+    });
     socket.on('message', (msg) => {
       // Skip if already rendered (prevents duplicates on sync/reconnect)
       if (msg.id > 0 && document.querySelector(`.message[data-id="${msg.id}"]`)) return;
@@ -183,7 +199,14 @@ const previewSend = $('#preview-send');
     });
     socket.on('message:sent', (d) => {
       const el = document.querySelector(`[data-temp-id="${d.tempId}"]`);
-      if (el) { el.removeAttribute('data-temp-id'); el.dataset.id = d.id; if (d.id > lastMessageId) lastMessageId = d.id; }
+      if (el) {
+        el.removeAttribute('data-temp-id');
+        el.dataset.id = d.id;
+        if (d.id > lastMessageId) lastMessageId = d.id;
+        pendingSends.delete(d.tempId);
+        el.dataset.status = 'sent';
+        setMessageStatus(el, 'sent');
+      }
     });
     socket.on('typing', (d) => {
       if (d.userId === otherUser) {
@@ -200,11 +223,20 @@ const previewSend = $('#preview-send');
     socket.on('reaction', (d) => updateReaction(d.messageId, d.userId, d.emoji, d.action));
     socket.on('read', (d) => {
       if (d.readBy === otherUser) d.messageIds.forEach(mid => {
-        const el = document.querySelector(`.message[data-id="${mid}"] .message-status`);
-        if (el) { el.textContent = '✓✓'; el.classList.add('read'); }
+        const el = document.querySelector(`.message[data-id="${mid}"]`);
+        if (el) {
+          el.dataset.readAt = '1';
+          const statusEl = el.querySelector('.message-status');
+          if (statusEl && el.dataset.status === 'sent') { statusEl.textContent = '✓✓'; statusEl.classList.add('read'); }
+        }
       });
     });
-    socket.on('disconnect', () => { partnerStatus.textContent = 'reconnecting...'; partnerStatus.classList.remove('online'); });
+    socket.on('disconnect', () => { partnerStatus.textContent = 'reconnecting...'; partnerStatus.classList.remove('online');
+      document.querySelectorAll('.message.me[data-status="sending"]').forEach(el => {
+        setMessageStatus(el, 'failed');
+        el.dataset.status = 'failed';
+      });
+    });
 
     // Pinned message handler
     socket.on('message:pinned', (d) => {
@@ -375,14 +407,19 @@ const previewSend = $('#preview-send');
       bubble = replyCtx + `<div class="message-media gif"><img src="${escHtml(msg.url)}" alt="GIF" loading="lazy"></div>`;
     }
 
-    const readStatus = isMe ? (msg.readAt ? '✓✓' : '✓') : '';
     const edited = msg.edited ? '<span class="edited-label">edited</span>' : '';
 
     wrapper.innerHTML = `
       <div class="message-bubble">${bubble}</div>
-      <div class="message-time">${formatTime(msg.createdAt)} ${readStatus ? `<span class="message-status ${msg.readAt ? 'read' : ''}">${readStatus}</span>` : ''} ${edited}</div>
+      <div class="message-time">${formatTime(msg.createdAt)} ${edited}</div>
       <div class="message-reactions" data-msg-id="${msg.id}"></div>
     `;
+
+    if (isMe) {
+      wrapper.dataset.status = msg.status || (msg.id > 0 ? 'sent' : 'sending');
+      wrapper.dataset.readAt = msg.readAt ? '1' : '';
+      setMessageStatus(wrapper, wrapper.dataset.status);
+    }
 
     const reactionsEl = wrapper.querySelector('.message-reactions');
     renderReactions(reactionsEl, msg.id, msg.reactions || {});
@@ -452,6 +489,54 @@ const previewSend = $('#preview-send');
     messagesEl.appendChild(wrapper);
   }
 
+  function setMessageStatus(el, status) {
+    const timeEl = el.querySelector('.message-time');
+    if (!timeEl) return;
+    const oldStatus = timeEl.querySelector('.message-status');
+    if (oldStatus) oldStatus.remove();
+    const oldRetry = timeEl.querySelector('.retry-btn');
+    if (oldRetry) oldRetry.remove();
+    if (status === 'sending') {
+      const span = document.createElement('span');
+      span.className = 'message-status sending';
+      span.innerHTML = '<span class="sending-spinner"></span>sending...';
+      timeEl.appendChild(span);
+    } else if (status === 'sent') {
+      const span = document.createElement('span');
+      span.className = 'message-status' + (el.dataset.readAt === '1' ? ' read' : '');
+      span.textContent = el.dataset.readAt === '1' ? '✓✓' : '✓';
+      timeEl.appendChild(span);
+    } else if (status === 'failed') {
+      const span = document.createElement('span');
+      span.className = 'message-status failed';
+      span.textContent = 'failed';
+      timeEl.appendChild(span);
+      const btn = document.createElement('button');
+      btn.className = 'retry-btn';
+      btn.type = 'button';
+      btn.textContent = '↻';
+      btn.title = 'Retry';
+      btn.addEventListener('click', (e) => { e.stopPropagation(); retryMessage(el); });
+      timeEl.appendChild(btn);
+    }
+  }
+
+  function retryMessage(el) {
+    const tempId = el.dataset.tempId;
+    if (!tempId) return;
+    const payload = pendingSends.get(tempId);
+    if (!payload) return;
+    setMessageStatus(el, 'sending');
+    el.dataset.status = 'sending';
+    const wasConnected = !!(socket && socket.connected);
+    if (socket) socket.emit('message', payload);
+    payload.queued = !wasConnected;
+    if (!wasConnected) {
+      setMessageStatus(el, 'failed');
+      el.dataset.status = 'failed';
+    }
+  }
+
   function renderReactions(container, msgId, reactions) {
     container.innerHTML = '';
     Object.entries(reactions).forEach(([emoji, users]) => {
@@ -506,9 +591,17 @@ const previewSend = $('#preview-send');
     if (!text) return;
     const tempId = 'temp-' + Date.now();
     const replyData = replyingTo ? { replyTo: replyingTo.id, replyContent: replyingTo.content || replyingTo.type, replySender: replyingTo.sender } : {};
-    renderMessage({ id: 0, tempId, sender: me.user, type: 'text', content: text, createdAt: Date.now(), reactions: {}, ...replyData });
+    const payload = { tempId, type: 'text', content: text, replyTo: replyingTo?.id || null };
+    pendingSends.set(tempId, payload);
+    renderMessage({ id: 0, tempId, sender: me.user, type: 'text', content: text, createdAt: Date.now(), reactions: {}, status: 'sending', ...replyData });
     scrollToBottom();
-    socket.emit('message', { tempId, type: 'text', content: text, replyTo: replyingTo?.id || null });
+    const wasConnected = !!(socket && socket.connected);
+    if (socket) socket.emit('message', payload);
+    payload.queued = !wasConnected;
+    if (!wasConnected) {
+      const el = document.querySelector(`[data-temp-id="${tempId}"]`);
+      if (el) { setMessageStatus(el, 'failed'); el.dataset.status = 'failed'; }
+    }
     msgInput.value = '';
     msgInput.style.height = 'auto';
     cancelReply();
@@ -664,9 +757,17 @@ const previewSend = $('#preview-send');
       if (!res.ok) throw new Error(data.error || 'Upload failed');
       const tempId = 'temp-' + Date.now();
       const replyData = replyingTo ? { replyTo: replyingTo.id, replyContent: replyingTo.content || replyingTo.type, replySender: replyingTo.sender } : {};
-      renderMessage({ id: 0, tempId, sender: me.user, type: data.type, content, url: data.url, createdAt: Date.now(), reactions: {}, ...replyData });
+      const payload = { tempId, type: data.type, content, filename: data.filename, mimetype: data.mimetype, size: data.size, replyTo: replyingTo?.id || null };
+      pendingSends.set(tempId, payload);
+      renderMessage({ id: 0, tempId, sender: me.user, type: data.type, content, url: data.url, createdAt: Date.now(), reactions: {}, status: 'sending', ...replyData });
       scrollToBottom();
-      socket.emit('message', { tempId, type: data.type, content, filename: data.filename, mimetype: data.mimetype, size: data.size, replyTo: replyingTo?.id || null });
+      const wasConnected = !!(socket && socket.connected);
+      if (socket) socket.emit('message', payload);
+      payload.queued = !wasConnected;
+      if (!wasConnected) {
+        const el = document.querySelector(`[data-temp-id="${tempId}"]`);
+        if (el) { setMessageStatus(el, 'failed'); el.dataset.status = 'failed'; }
+      }
       cancelReply();
     } catch (err) { alert('Upload failed: ' + err.message); }
   }
@@ -810,9 +911,17 @@ const previewSend = $('#preview-send');
     gifPanel.style.display = 'none';
     const tempId = 'temp-' + Date.now();
     const replyData = replyingTo ? { replyTo: replyingTo.id, replyContent: replyingTo.content || replyingTo.type, replySender: replyingTo.sender } : {};
-    renderMessage({ id: 0, tempId, sender: me.user, type: 'gif', content: '', url, createdAt: Date.now(), reactions: {}, ...replyData });
+    const payload = { tempId, type: 'gif', content: url, replyTo: replyingTo?.id || null };
+    pendingSends.set(tempId, payload);
+    renderMessage({ id: 0, tempId, sender: me.user, type: 'gif', content: '', url, createdAt: Date.now(), reactions: {}, status: 'sending', ...replyData });
     scrollToBottom();
-    socket.emit('message', { tempId, type: 'gif', content: url, replyTo: replyingTo?.id || null });
+    const wasConnected = !!(socket && socket.connected);
+    if (socket) socket.emit('message', payload);
+    payload.queued = !wasConnected;
+    if (!wasConnected) {
+      const el = document.querySelector(`[data-temp-id="${tempId}"]`);
+      if (el) { setMessageStatus(el, 'failed'); el.dataset.status = 'failed'; }
+    }
     cancelReply();
     gifUrlInput.value = '';
   }
