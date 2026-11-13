@@ -97,9 +97,13 @@ db.exec(`
 try { db.exec('ALTER TABLE messages ADD COLUMN bookmarked INTEGER NOT NULL DEFAULT 0'); } catch (e) { /* column may already exist */ }
 // Migration: add self_destruct column if missing
 try { db.exec('ALTER TABLE messages ADD COLUMN self_destruct INTEGER NOT NULL DEFAULT 0'); } catch (e) { /* column may already exist */ }
+// Migration: add scheduled_at column if missing
+try { db.exec('ALTER TABLE messages ADD COLUMN scheduled_at INTEGER NOT NULL DEFAULT 0'); } catch (e) { /* column may already exist */ }
+// Migration: add status column if missing
+try { db.exec("ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'sent'"); } catch (e) { /* column may already exist */ }
 
 const insertMsg = db.prepare(
-  'INSERT INTO messages (sender, type, content, filename, mimetype, size, reply_to, created_at, self_destruct) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  'INSERT INTO messages (sender, type, content, filename, mimetype, size, reply_to, created_at, self_destruct, scheduled_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 );
 const getMessages = db.prepare(
   "SELECT m.*, (SELECT GROUP_CONCAT(r.emoji || ':' || r.user, ',') FROM reactions r WHERE r.message_id = m.id) as reactions FROM messages m ORDER BY m.created_at ASC LIMIT ? OFFSET ?"
@@ -190,7 +194,7 @@ io.on('connection', (socket) => {
     if (!type) return;
     const now = Date.now();
     const sd = Math.max(0, parseInt(selfDestruct, 10) || 0);
-    const result = insertMsg.run(userId, type, content || null, filename || null, mimetype || null, size || null, replyTo || null, now, sd);
+    const result = insertMsg.run(userId, type, content || null, filename || null, mimetype || null, size || null, replyTo || null, now, sd, 0, 'sent');
     const msgId = result.lastInsertRowid;
     const msg = formatMessage({
       id: msgId,
@@ -212,6 +216,33 @@ io.on('connection', (socket) => {
     socket.emit('message:sent', { tempId: data.tempId, id: msg.id });
     // Schedule self-destruct deletion
     if (sd > 0) scheduleSelfDestruct(msgId, sd, now);
+  });
+
+  // Schedule a message for future delivery
+  socket.on('schedule', (data) => {
+    const { type, content, scheduledAt, filename, mimetype, size, replyTo } = data || {};
+    if (!type || !scheduledAt) return;
+    const now = Date.now();
+    const sd = 0;
+    const result = insertMsg.run(userId, type, content || null, filename || null, mimetype || null, size || null, replyTo || null, now, sd, scheduledAt, 'scheduled');
+    const msgId = result.lastInsertRowid;
+    const msg = formatMessage({
+      id: msgId,
+      sender: userId,
+      type,
+      content,
+      filename,
+      mimetype,
+      size,
+      reply_to: replyTo || null,
+      created_at: now,
+      read_at: null,
+      reactions: null,
+      self_destruct: sd,
+      scheduled_at: scheduledAt,
+      status: 'scheduled',
+    });
+    socket.emit('message:scheduled', { tempId: data.tempId, id: msg.id, scheduledAt });
   });
 
   // Typing indicator
@@ -345,6 +376,8 @@ function formatMessage(m) {
     pinned: !!m.pinned,
     bookmarked: !!m.bookmarked,
     selfDestruct: m.self_destruct || 0,
+    scheduledAt: m.scheduled_at || 0,
+    status: m.status || 'sent',
     createdAt: m.created_at,
     readAt: m.read_at,
     reactions,
@@ -650,6 +683,17 @@ runCleanup();
 // Schedule periodic cleanup
 const cleanupInterval = (parseInt(process.env.CLEANUP_INTERVAL_HOURS || '24', 10)) * 60 * 60 * 1000;
 setInterval(runCleanup, cleanupInterval);
+
+// Scheduled message checker (runs every 10 seconds)
+setInterval(() => {
+  const now = Date.now();
+  const due = db.prepare("SELECT * FROM messages WHERE status = 'scheduled' AND scheduled_at <= ?").all(now);
+  due.forEach(msg => {
+    db.prepare("UPDATE messages SET status = 'sent' WHERE id = ?").run(msg.id);
+    const formatted = formatMessage({ ...msg, status: 'sent', scheduled_at: msg.scheduled_at });
+    io.emit('message', formatted);
+  });
+}, 10000);
 
 // ── Start server ──
 server.listen(PORT, '0.0.0.0', () => {

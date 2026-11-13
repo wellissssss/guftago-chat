@@ -49,6 +49,11 @@ const pendingSends = new Map(); // tempId -> payload for retry
   const fileInput = $('#file-input');
   const sdBtn = $('#sd-btn');
   const sdPicker = $('#sd-picker');
+  const scheduleBtn = $('#schedule-btn');
+  const schedulePicker = $('#schedule-picker');
+  const scheduleTime = $('#schedule-time');
+  const scheduleConfirm = $('#schedule-confirm');
+  const scheduleCancelBtn = $('#schedule-cancel');
 const previewOverlay = $('#preview-overlay');
 const previewMedia = $('#preview-media');
 const previewCaption = $('#preview-caption');
@@ -264,6 +269,16 @@ const previewSend = $('#preview-send');
         pendingSends.delete(d.tempId);
         el.dataset.status = 'sent';
         setMessageStatus(el, 'sent');
+      }
+    });
+    socket.on('message:scheduled', (d) => {
+      const el = document.querySelector(`[data-temp-id="${d.tempId}"]`);
+      if (el) {
+        el.removeAttribute('data-temp-id');
+        el.dataset.id = d.id;
+        if (d.id > lastMessageId) lastMessageId = d.id;
+        el.dataset.status = 'scheduled';
+        el.dataset.scheduledAt = d.scheduledAt;
       }
     });
     socket.on('typing', (d) => {
@@ -500,7 +515,8 @@ const previewSend = $('#preview-send');
     if (skel) skel.remove();
     const isMe = msg.sender === me.user;
     const wrapper = document.createElement('div');
-    wrapper.className = `message ${isMe ? 'me' : 'them'} ${msg.pinned ? 'pinned-msg' : ''} ${msg.bookmarked ? 'bookmarked-msg' : ''} ${msg.selfDestruct > 0 ? 'self-destruct' : ''}`;
+    const isScheduledCls = (msg.status === 'scheduled' || (msg.scheduledAt && msg.scheduledAt > 0 && msg.status !== 'sent'));
+    wrapper.className = `message ${isMe ? 'me' : 'them'} ${msg.pinned ? 'pinned-msg' : ''} ${msg.bookmarked ? 'bookmarked-msg' : ''} ${msg.selfDestruct > 0 ? 'self-destruct' : ''} ${isScheduledCls ? 'scheduled-msg' : ''}`;
     wrapper.dataset.id = msg.id || 0;
     if (msg.selfDestruct > 0) wrapper.dataset.selfDestruct = msg.selfDestruct;
     if (msg.tempId) wrapper.dataset.tempId = msg.tempId;
@@ -544,9 +560,19 @@ const previewSend = $('#preview-send');
       sdHtml = `<span class="sd-icon">🔥</span><span class="sd-countdown" data-expiry="${expiry}">${formatCountdown(Math.max(0, Math.ceil((expiry - Date.now())/1000)))}</span>`;
     }
 
+    const isScheduled = msg.status === 'scheduled' || (msg.scheduledAt && msg.scheduledAt > 0 && msg.status !== 'sent');
+    let scheduledHtml = '';
+    if (isScheduled && msg.scheduledAt) {
+      scheduledHtml = `<div class="scheduled-info">⏰ Scheduled for ${new Date(msg.scheduledAt).toLocaleString()}</div>`;
+    }
+    let cancelScheduledHtml = '';
+    if (isMe && isScheduled) {
+      cancelScheduledHtml = `<button class="cancel-scheduled-btn" data-id="${msg.id}" title="Cancel scheduled message">✕ Cancel</button>`;
+    }
+
     wrapper.innerHTML = `
-      <div class="message-bubble">${bubble}</div>
-      <div class="message-time">${formatTime(msg.createdAt)} ${edited} ${sdHtml}</div>
+      <div class="message-bubble">${bubble}${scheduledHtml}</div>
+      <div class="message-time">${formatTime(msg.createdAt)} ${edited} ${sdHtml} ${cancelScheduledHtml}</div>
       ${readTimeHtml}
       <div class="message-reactions" data-msg-id="${msg.id}"></div>
     `;
@@ -560,6 +586,15 @@ const previewSend = $('#preview-send');
 
     const reactionsEl = wrapper.querySelector('.message-reactions');
     renderReactions(reactionsEl, msg.id, msg.reactions || {});
+
+    const cancelBtn = wrapper.querySelector('.cancel-scheduled-btn');
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!confirm('Cancel scheduled message?')) return;
+        socket.emit('delete', { messageId: msg.id });
+      });
+    }
 
     // Click bubble for context menu (long-press on mobile)
     const bubbleEl = wrapper.querySelector('.message-bubble');
@@ -877,6 +912,57 @@ const previewSend = $('#preview-send');
     });
   }
   document.addEventListener('click', () => { if (sdPicker) sdPicker.style.display = 'none'; });
+
+  // ── Schedule message picker ──
+  if (scheduleBtn) {
+    scheduleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!schedulePicker) return;
+      const show = schedulePicker.style.display === 'none';
+      schedulePicker.style.display = show ? 'flex' : 'none';
+      if (show && scheduleTime) {
+        const d = new Date(Date.now() + 60 * 60 * 1000);
+        d.setSeconds(0, 0);
+        d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5);
+        scheduleTime.value = d.toISOString().slice(0, 16);
+        scheduleTime.focus();
+      }
+    });
+  }
+  if (scheduleCancelBtn) {
+    scheduleCancelBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (schedulePicker) schedulePicker.style.display = 'none';
+    });
+  }
+  if (scheduleConfirm) {
+    scheduleConfirm.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const text = msgInput.value.trim();
+      if (!text) { alert('Type a message first'); return; }
+      if (!scheduleTime || !scheduleTime.value) { alert('Pick a time'); return; }
+      const scheduledAt = new Date(scheduleTime.value).getTime();
+      if (isNaN(scheduledAt) || scheduledAt <= Date.now()) { alert('Pick a future time'); return; }
+      const tempId = 'temp-' + Date.now();
+      const replyData = replyingTo ? { replyTo: replyingTo.id, replyContent: replyingTo.content || replyingTo.type, replySender: replyingTo.sender } : {};
+      const sd = selfDestructSeconds;
+      renderMessage({ id: 0, tempId, sender: me.user, type: 'text', content: text, createdAt: Date.now(), reactions: {}, status: 'scheduled', scheduledAt, selfDestruct: sd, ...replyData });
+      scrollToBottom();
+      if (socket) socket.emit('schedule', { tempId, type: 'text', content: text, scheduledAt, replyTo: replyingTo?.id || null, selfDestruct: sd });
+      msgInput.value = '';
+      msgInput.style.height = 'auto';
+      clearDraft();
+      cancelReply();
+      stopTyping();
+      if (schedulePicker) schedulePicker.style.display = 'none';
+      if (soundOnSend) notifSound.play().catch(() => {});
+    });
+  }
+  document.addEventListener('click', (e) => {
+    if (schedulePicker && schedulePicker.style.display !== 'none' && !schedulePicker.contains(e.target) && e.target !== scheduleBtn) {
+      schedulePicker.style.display = 'none';
+    }
+  });
 
   // ── Countdown updater ──
   setInterval(() => {

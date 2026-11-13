@@ -102,6 +102,7 @@
       <button id="gif-btn" class="icon-btn" title="GIF">🎞</button>
       <button id="voice-btn" class="icon-btn" title="Voice note">🎙</button>
       <button id="sd-btn" class="icon-btn" title="Self-destruct timer">⏱️</button>
+      <button id="schedule-btn" class="icon-btn" title="Schedule message">⏰</button>
       <textarea id="msg-input" placeholder="Message" autocomplete="off" rows="1"></textarea>
       <button id="send-btn" class="send-btn" title="Send">➤</button>
     </footer>
@@ -111,6 +112,11 @@
       <button data-sd="60">1m</button>
       <button data-sd="300">5m</button>
       <button data-sd="3600">1h</button>
+    </div>
+    <div id="schedule-picker" class="schedule-picker" style="display:none;">
+      <input type="datetime-local" id="schedule-time">
+      <button id="schedule-confirm" class="admin-btn" style="padding:4px 10px;font-size:13px;">Schedule</button>
+      <button id="schedule-cancel" class="icon-btn" style="width:28px;height:28px;font-size:14px;">✕</button>
     </div>
 
     <input type="file" id="file-input" accept="image/*,video/*,audio/*" style="display:none;">
