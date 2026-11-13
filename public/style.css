@@ -707,8 +707,9 @@ body { height: var(--app-height, 100%); }
   border: 1px solid #f5a623;
   box-shadow: 0 0 8px rgba(245,166,35,0.2);
 }
-.message.bookmarked-msg::after-bookmark {
-  content: '⭐';
+.message.bookmarked-msg::after {
+  content: '⭐'; position: absolute; top: -8px; left: -8px;
+  font-size: 12px; z-index: 2;
 }
 .bookmark-item {
   display: flex; flex-direction: column; gap: 4px;

@@ -1334,6 +1334,9 @@ const previewSend = $('#preview-send');
 
   // ── Context menu ──
   function showContextMenu(msg, anchor) {
+    // Sync bookmarked state from DOM in case it changed elsewhere
+    const msgEl = document.querySelector(`.message[data-id="${msg.id}"]`);
+    if (msgEl) msg.bookmarked = msgEl.classList.contains('bookmarked-msg');
     contextTarget = msg;
     const rect = anchor.getBoundingClientRect();
     // Quick reactions row
