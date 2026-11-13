@@ -631,7 +631,7 @@ const previewSend = $('#preview-send');
   // ── Auto-resize textarea ──
   function autoResize() {
     msgInput.style.height = 'auto';
-    msgInput.style.height = Math.min(msgInput.scrollHeight, 100) + 'px';
+    msgInput.style.height = Math.min(msgInput.scrollHeight, 120) + 'px';
   }
 
   // ── Send text ──
@@ -1028,8 +1028,15 @@ const previewSend = $('#preview-send');
     reactionTarget = msgId;
     const rect = anchor.getBoundingClientRect();
     reactionPicker.style.display = 'flex';
-    reactionPicker.style.top = Math.max(10, rect.top - 48) + 'px';
-    reactionPicker.style.left = Math.max(10, Math.min(rect.left, window.innerWidth - 200)) + 'px';
+    const pickerWidth = reactionPicker.offsetWidth || 300;
+    let top = rect.top - 52;
+    if (top < 10) top = rect.bottom + 8;
+    if (top + 50 > window.innerHeight) top = window.innerHeight - 60;
+    reactionPicker.style.top = Math.max(10, top) + 'px';
+    let left = rect.left;
+    if (left + pickerWidth > window.innerWidth - 10) left = window.innerWidth - pickerWidth - 10;
+    if (left < 10) left = 10;
+    reactionPicker.style.left = left + 'px';
     clearTimeout(window._rpTimeout);
     window._rpTimeout = setTimeout(() => { reactionPicker.style.display = 'none'; }, 5000);
   }
@@ -1046,9 +1053,9 @@ const previewSend = $('#preview-send');
     contextTarget = msg;
     const rect = anchor.getBoundingClientRect();
     // Quick reactions row
-    let html = '<div style="display:flex;gap:2px;padding:6px 8px;border-bottom:1px solid var(--border);">';
+    let html = '<div style="display:flex;gap:2px;padding:6px 8px;border-bottom:1px solid var(--wa-border);">';
     ['❤️','😂','😍','😮','😢','👍','🔥'].forEach(e => {
-      html += `<button onclick="window._ctxReact('${e}')" style="width:30px;height:30px;border:none;background:none;font-size:16px;cursor:pointer;border-radius:50%;" onmouseover="this.style.background='var(--bg-input)'" onmouseout="this.style.background='none'">${e}</button>`;
+      html += `<button onclick="window._ctxReact('${e}')" style="width:30px;height:30px;border:none;background:none;font-size:16px;cursor:pointer;border-radius:50%;" onmouseover="this.style.background='var(--wa-input-bg)'" onmouseout="this.style.background='none'">${e}</button>`;
     });
     html += '</div>';
     html += `<button onclick="window._ctxReply()"><span class="menu-icon">↩</span> Reply</button>`;
@@ -1060,12 +1067,16 @@ const previewSend = $('#preview-send');
     }
     contextMenu.innerHTML = html;
     contextMenu.style.display = 'block';
-    const menuHeight = 220;
+    const menuHeight = contextMenu.offsetHeight || 220;
+    const menuWidth = contextMenu.offsetWidth || 180;
     let top = rect.bottom + 4;
-    if (top + menuHeight > window.innerHeight) top = rect.top - menuHeight - 4;
-    if (top < 0) top = 4;
+    if (top + menuHeight > window.innerHeight - 10) top = rect.top - menuHeight - 4;
+    if (top < 10) top = 10;
     contextMenu.style.top = top + 'px';
-    contextMenu.style.left = Math.max(10, Math.min(rect.left, window.innerWidth - 180)) + 'px';
+    let left = rect.left;
+    if (left + menuWidth > window.innerWidth - 10) left = window.innerWidth - menuWidth - 10;
+    if (left < 10) left = 10;
+    contextMenu.style.left = left + 'px';
     clearTimeout(window._cmTimeout);
     window._cmTimeout = setTimeout(() => { contextMenu.style.display = 'none'; }, 4000);
   }
