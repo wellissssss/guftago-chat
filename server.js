@@ -299,6 +299,16 @@ io.use((socket, next) => {
     activeSessions.delete(code);
   }
 
+  const sessionRecord = {
+    socket,
+    deviceId,
+    lastSeen: now,
+    connectedAt: now,
+    name: entry.name || (entry.role === 'admin' ? 'Admin' : 'Partner'),
+    role: entry.role,
+  };
+  activeSessions.set(code, sessionRecord);
+
   socket.partner = {
     id: entry.role === 'admin' ? 'admin' : 'partner',
     name: entry.name || (entry.role === 'admin' ? 'Admin' : 'Partner'),
@@ -428,7 +438,7 @@ io.on('connection', (socket) => {
   // Reaction
   socket.on('reaction', (data) => {
     const { messageId, emoji, action } = data;
-    if (!messageId || !emoji) return;
+    if (!messageId || !emoji || typeof emoji !== 'string' || emoji.length > 10) return;
     const rNow = Date.now();
     if (action === 'remove') {
       removeReaction.run(messageId, userId, emoji);
@@ -448,14 +458,16 @@ io.on('connection', (socket) => {
     socket.broadcast.emit('read', { messageIds, readBy: userId, readAt: rNow });
   });
 
-  // Edit message
+  // Edit message (restricted to text messages only)
   socket.on('edit', (data) => {
     const { messageId, content } = data;
-    if (!messageId || !content) return;
+    if (!messageId || !content || typeof content !== 'string') return;
     const msg = db.prepare('SELECT * FROM messages WHERE id = ? AND sender = ?').get(messageId, userId);
-    if (!msg) return;
-    db.prepare('UPDATE messages SET content = ? WHERE id = ?').run(content, messageId);
-    io.emit('message:edited', { id: messageId, content });
+    if (!msg || msg.type !== 'text') return;
+    const cleanContent = content.trim();
+    if (!cleanContent) return;
+    db.prepare('UPDATE messages SET content = ? WHERE id = ?').run(cleanContent, messageId);
+    io.emit('message:edited', { id: messageId, content: cleanContent });
   });
 
   // Pin/unpin message
@@ -544,14 +556,20 @@ function formatMessage(m) {
   let replyContent = null;
   let replySender = null;
   if (replyTo) {
-    if (m.reply_sender !== undefined) {
+    if (m.reply_sender !== undefined && m.reply_sender !== null) {
       replyContent = m.reply_type === 'text' ? m.reply_content : (m.reply_type ? `[${m.reply_type}]` : null);
       replySender = m.reply_sender;
+    } else if (m.reply_sender === null) {
+      replyContent = '[deleted]';
+      replySender = 'Deleted';
     } else {
       const replyMsg = db.prepare('SELECT sender, type, content FROM messages WHERE id = ?').get(replyTo);
       if (replyMsg) {
         replyContent = replyMsg.type === 'text' ? replyMsg.content : `[${replyMsg.type}]`;
         replySender = replyMsg.sender;
+      } else {
+        replyContent = '[deleted]';
+        replySender = 'Deleted';
       }
     }
   }
@@ -854,8 +872,10 @@ app.post('/api/upload', requireSession, upload.single('file'), async (req, res) 
 
 // Get message history
 app.get('/api/messages', requireSession, (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit || '100', 10), 200);
-  const offset = parseInt(req.query.offset || '0', 10);
+  const parsedLimit = parseInt(req.query.limit, 10);
+  const limit = Math.max(1, Math.min(Number.isFinite(parsedLimit) ? parsedLimit : 100, 200));
+  const parsedOffset = parseInt(req.query.offset, 10);
+  const offset = Math.max(0, Number.isFinite(parsedOffset) ? parsedOffset : 0);
   const rows = getMessages.all(limit, offset);
   res.json(rows.map(formatMessage));
 });
@@ -882,11 +902,15 @@ app.get('/api/health', (req, res) => {
 // ── Auto-cleanup old media ──
 function runCleanup() {
   const now = Date.now();
+  function parseDays(val, fallback) {
+    const n = parseInt(val, 10);
+    return Number.isFinite(n) && n >= 0 ? n : fallback;
+  }
   const types = [
-    { type: 'photo', days: parseInt(process.env.CLEANUP_PHOTOS_DAYS || '30', 10) },
-    { type: 'video', days: parseInt(process.env.CLEANUP_VIDEOS_DAYS || '14', 10) },
-    { type: 'audio', days: parseInt(process.env.CLEANUP_AUDIO_DAYS || '30', 10) },
-    { type: 'gif', days: parseInt(process.env.CLEANUP_GIFS_DAYS || '30', 10) },
+    { type: 'photo', days: parseDays(process.env.CLEANUP_PHOTOS_DAYS, 30) },
+    { type: 'video', days: parseDays(process.env.CLEANUP_VIDEOS_DAYS, 14) },
+    { type: 'audio', days: parseDays(process.env.CLEANUP_AUDIO_DAYS, 30) },
+    { type: 'gif', days: parseDays(process.env.CLEANUP_GIFS_DAYS, 30) },
   ];
   for (const { type, days } of types) {
     if (days <= 0) continue;

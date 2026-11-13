@@ -25,7 +25,8 @@
   let hapticFeedback = localStorage.getItem('hapticFeedback') !== 'false'; // default true
   let replyingTo = null; // { id, sender, content, type }
   let selfDestructSeconds = parseInt(localStorage.getItem('sdTimer') || '0', 10) || 0;
-const pendingSends = new Map(); // tempId -> payload for retry
+  const pendingSends = new Map(); // tempId -> payload for retry
+  const DRAFT_KEY = 'chatDraft';
 
   // ── E2EE state ──
   let e2eeKeyPair = null;
@@ -929,7 +930,11 @@ const previewSend = $('#preview-send');
     Object.entries(reactions).forEach(([emoji, users]) => {
       const chip = document.createElement('span');
       chip.className = `reaction-chip ${users.includes(me.user) ? 'mine' : ''}`;
-      chip.innerHTML = `${emoji}<span class="reaction-count">${users.length}</span>`;
+      chip.textContent = emoji;
+      const count = document.createElement('span');
+      count.className = 'reaction-count';
+      count.textContent = users.length;
+      chip.appendChild(count);
       chip.addEventListener('click', (e) => {
         e.stopPropagation();
         socket.emit('reaction', { messageId: msgId, emoji, action: users.includes(me.user) ? 'remove' : 'add' });
@@ -951,7 +956,11 @@ const previewSend = $('#preview-send');
       } else {
         const newChip = document.createElement('span');
         newChip.className = `reaction-chip ${userId === me.user ? 'mine' : ''}`;
-        newChip.innerHTML = `${emoji}<span class="reaction-count">1</span>`;
+        newChip.textContent = emoji;
+        const count = document.createElement('span');
+        count.className = 'reaction-count';
+        count.textContent = '1';
+        newChip.appendChild(count);
         newChip.addEventListener('click', (e) => { e.stopPropagation(); socket.emit('reaction', { messageId: msgId, emoji, action: 'remove' }); });
         container.appendChild(newChip);
       }
@@ -973,7 +982,6 @@ const previewSend = $('#preview-send');
   }
 
   // ── Draft message saving ──
-  const DRAFT_KEY = 'chatDraft';
   let draftSaveTimer = null;
 
   function showDraftIndicator() {
@@ -2101,17 +2109,17 @@ const previewSend = $('#preview-send');
         headers: { ...(token ? { 'x-session': token } : {}) }
       });
       const msgs = await res.json();
-      let text = 'Guftago Chat Export\\n';
-      text += 'Exported: ' + new Date().toLocaleString() + '\\n';
-      text += '='.repeat(40) + '\\n\\n';
+      let text = 'Guftago Chat Export\n';
+      text += 'Exported: ' + new Date().toLocaleString() + '\n';
+      text += '='.repeat(40) + '\n\n';
       msgs.forEach(m => {
         const sender = m.sender === me.user ? (me.name || 'You') : (otherName || 'Partner');
         const time = new Date(m.createdAt).toLocaleString();
         let content = m.content || '';
         if (m.type !== 'text') content = `[${m.type}] ${content}`;
-        text += `[${time}] ${sender}: ${content}\\n`;
+        text += `[${time}] ${sender}: ${content}\n`;
         if (m.reactions && Object.keys(m.reactions).length) {
-          text += `  Reactions: ${Object.keys(m.reactions).join(' ')}\\n`;
+          text += `  Reactions: ${Object.keys(m.reactions).join(' ')}\n`;
         }
       });
       const blob = new Blob([text], { type: 'text/plain' });
