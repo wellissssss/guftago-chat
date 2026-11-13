@@ -20,6 +20,9 @@
   let contextTarget = null;
   let theme = localStorage.getItem('theme') || 'dark';
   let wallpaper = localStorage.getItem('wallpaper') || 'default';
+  let soundOnNewMessage = localStorage.getItem('soundOnNewMessage') !== 'false'; // default true
+  let soundOnSend = localStorage.getItem('soundOnSend') !== 'false'; // default true
+  let hapticFeedback = localStorage.getItem('hapticFeedback') !== 'false'; // default true
   let replyingTo = null; // { id, sender, content, type }
 const pendingSends = new Map(); // tempId -> payload for retry
 
@@ -231,8 +234,8 @@ const previewSend = $('#preview-send');
       if (document.visibilityState === 'visible' && msg.sender !== me.user) socket.emit('read', [msg.id]);
       // Sound + haptic notification when the tab is in the background
       if (msg.sender !== me.user && document.visibilityState !== 'visible') {
-        notifSound.play().catch(() => {});
-        if (navigator.vibrate) navigator.vibrate(100);
+        if (soundOnNewMessage) notifSound.play().catch(() => {});
+        if (hapticFeedback && navigator.vibrate) navigator.vibrate(100);
       }
     });
     socket.on('message:sent', (d) => {
@@ -695,6 +698,7 @@ const previewSend = $('#preview-send');
     msgInput.style.height = 'auto';
     cancelReply();
     stopTyping();
+    if (soundOnSend) notifSound.play().catch(() => {});
   }
   sendBtn.addEventListener('click', sendText);
   msgInput.addEventListener('keydown', (e) => {
@@ -895,6 +899,7 @@ const previewSend = $('#preview-send');
         if (el) { setMessageStatus(el, 'failed'); el.dataset.status = 'failed'; }
       }
       cancelReply();
+      if (soundOnSend) notifSound.play().catch(() => {});
     } catch (err) { hideUploadProgress(); alert('Upload failed: ' + err.message); }
   }
 
@@ -1050,6 +1055,7 @@ const previewSend = $('#preview-send');
     }
     cancelReply();
     gifUrlInput.value = '';
+    if (soundOnSend) notifSound.play().catch(() => {});
   }
   gifUrlSend.addEventListener('click', sendGifUrl);
   gifUrlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendGifUrl(); } });
@@ -1302,6 +1308,9 @@ const previewSend = $('#preview-send');
   const pickCatPartner = $('#pick-cat-partner');
   const catPreview = $('#cat-preview');
   const enterSendToggle = $('#enter-send-toggle');
+  const soundNewToggle = $('#sound-new-toggle');
+  const soundSendToggle = $('#sound-send-toggle');
+  const hapticToggle = $('#haptic-toggle');
   const sessionsList = $('#sessions-list');
   const wallpaperGrid = $('#wallpaper-grid');
 
@@ -1311,6 +1320,30 @@ const previewSend = $('#preview-send');
     enterToSend = !enterToSend;
     enterSendToggle.classList.toggle('active', enterToSend);
     localStorage.setItem('enterToSend', enterToSend.toString());
+  });
+
+  // Sound on new message toggle
+  if (soundOnNewMessage) soundNewToggle.classList.add('active');
+  soundNewToggle.addEventListener('click', () => {
+    soundOnNewMessage = !soundOnNewMessage;
+    soundNewToggle.classList.toggle('active', soundOnNewMessage);
+    localStorage.setItem('soundOnNewMessage', soundOnNewMessage.toString());
+  });
+
+  // Sound on send toggle
+  if (soundOnSend) soundSendToggle.classList.add('active');
+  soundSendToggle.addEventListener('click', () => {
+    soundOnSend = !soundOnSend;
+    soundSendToggle.classList.toggle('active', soundOnSend);
+    localStorage.setItem('soundOnSend', soundOnSend.toString());
+  });
+
+  // Haptic feedback toggle
+  if (hapticFeedback) hapticToggle.classList.add('active');
+  hapticToggle.addEventListener('click', () => {
+    hapticFeedback = !hapticFeedback;
+    hapticToggle.classList.toggle('active', hapticFeedback);
+    localStorage.setItem('hapticFeedback', hapticFeedback.toString());
   });
 
   // Wallpaper picker
@@ -1617,7 +1650,7 @@ const previewSend = $('#preview-send');
 
   // ── Haptic feedback on send ──
   sendBtn.addEventListener('click', () => {
-    if (navigator.vibrate) navigator.vibrate(50);
+    if (hapticFeedback && navigator.vibrate) navigator.vibrate(50);
   }, true);
 
   // ── Mobile keyboard: keep the composer above the on-screen keyboard ──

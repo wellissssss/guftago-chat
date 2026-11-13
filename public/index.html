@@ -10,7 +10,7 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
   <title>Guftago</title>
-  <link rel="stylesheet" href="/style.css?v=6">
+  <link rel="stylesheet" href="/style.css?v=7">
 </head>
 <body>
   <!-- Login Screen -->
@@ -191,6 +191,18 @@
           <div class="settings-toggle" id="enter-send-toggle"></div>
         </div>
         <p class="admin-desc" style="margin-top:4px;">When OFF: Enter = new line, Ctrl+Enter = send</p>
+        <div class="settings-row">
+          <span>Sound on new message</span>
+          <div class="settings-toggle" id="sound-new-toggle"></div>
+        </div>
+        <div class="settings-row">
+          <span>Sound on send</span>
+          <div class="settings-toggle" id="sound-send-toggle"></div>
+        </div>
+        <div class="settings-row">
+          <span>Haptic feedback</span>
+          <div class="settings-toggle" id="haptic-toggle"></div>
+        </div>
       </div>
       <div class="admin-section">
         <h3>Chat Wallpaper</h3>
@@ -230,6 +242,6 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/app.js?v=6"></script>
+  <script src="/app.js?v=7"></script>
 </body>
 </html>
