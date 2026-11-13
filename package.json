@@ -9,6 +9,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "tunnel:static": "bash scripts/static-tunnel.sh",
+    "tunnel:quick": "bash scripts/tunnel.sh",
     "background": "nohup node server.js > data/server.log 2>&1 & echo $! > data/server.pid && echo 'Started (PID: '$(cat data/server.pid)')'"
   },
   "keywords": [
